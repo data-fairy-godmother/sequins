@@ -1,0 +1,693 @@
+<!--
+  Sequins ✨ — Index.html
+  v0.3.2 — 2026-06-30
+  - Collapsible Per-Line Summary (both views, shared state)
+  - buildLineCards() shared helper
+  - Structural fix: removed 2 extra </div> closing main+shell prematurely
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sequins ✨</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,400&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0b0d10;--surface:#13161c;--surface2:#1a1e28;--border:rgba(255,255,255,0.06);--border2:rgba(255,255,255,0.11);--text:#e4e8f0;--muted:#8892a4;--teal:#2dd4bf;--teal-dim:rgba(45,212,191,0.10);--green:#22c55e;--green-dim:rgba(34,197,94,0.10);--amber:#f59e0b;--amber-dim:rgba(245,158,11,0.10);--red:#ef4444;--red-dim:rgba(239,68,68,0.10);--blue:#60a5fa;--blue-dim:rgba(96,165,250,0.10);--purple:#a78bfa;--mono:'DM Mono',monospace;--sans:'DM Sans',sans-serif;}
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--sans);font-size:13px;line-height:1.5;}
+.shell{display:grid;grid-template-columns:200px 1fr;grid-template-rows:52px 1fr;height:100vh;overflow:hidden;}
+.topbar{grid-column:1/-1;display:flex;align-items:center;gap:16px;padding:0 20px;border-bottom:1px solid var(--border);background:var(--surface);}
+.wordmark{font-family:var(--mono);font-size:17px;font-weight:500;color:var(--teal);}
+.topbar-right{margin-left:auto;display:flex;align-items:center;gap:10px;}
+.live-dot{width:6px;height:6px;border-radius:50%;background:var(--green);animation:pulse 2s infinite;}
+.live-label{font-family:var(--mono);font-size:11px;color:var(--green);display:flex;align-items:center;gap:5px;}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.sidebar{background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow-y:auto;padding:12px 0;}
+.sidebar-section{padding:0 12px;margin-bottom:4px;}
+.sidebar-label{font-size:9px;font-family:var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:.1em;padding:8px 8px 4px;}
+.nav-item{display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:6px;font-family:var(--mono);font-size:12px;color:var(--muted);cursor:pointer;border:none;background:none;width:100%;text-align:left;transition:all .12s;}
+.nav-item:hover{background:var(--surface2);color:var(--text);}
+.nav-item.active{background:var(--teal-dim);color:var(--teal);}
+.nav-item .icon{font-size:14px;width:18px;text-align:center;flex-shrink:0;}
+.nav-spacer{height:1px;background:var(--border);margin:8px 12px;}
+.main{overflow-y:auto;padding:24px;display:flex;flex-direction:column;gap:20px;}
+.view{display:none;flex-direction:column;gap:20px;}
+.view.active{display:flex;}
+.page-header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;}
+.page-title{font-family:var(--mono);font-size:18px;font-weight:500;color:var(--text);}
+.page-sub{font-size:12px;color:var(--muted);margin-top:3px;}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px 18px;}
+.card-title{font-size:10px;font-family:var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;}
+.card-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+.metrics-toggle-row{cursor:pointer;user-select:none;}
+.metrics-toggle-row:hover .metrics-arrow{color:var(--teal);}
+.metrics-arrow{font-size:13px;color:var(--muted);transition:transform .2s ease,color .12s;display:inline-block;margin-left:2px;line-height:1;}
+.metrics-arrow.collapsed{transform:rotate(-90deg);}
+.metrics-body{overflow:hidden;transition:max-height .28s ease,opacity .2s ease;max-height:800px;opacity:1;}
+.metrics-body.collapsed{max-height:0;opacity:0;}
+.week-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.week-chip{font-family:var(--mono);font-size:11px;padding:4px 12px;border-radius:20px;border:1px solid var(--border2);background:transparent;color:var(--muted);cursor:pointer;}
+.week-chip:hover{border-color:var(--teal);color:var(--teal);}
+.week-chip.active{background:var(--teal);border-color:var(--teal);color:#000;font-weight:500;}
+.day-tabs{display:flex;gap:4px;flex-wrap:wrap;}
+.day-tab{font-family:var(--mono);font-size:11px;font-weight:500;padding:5px 14px;border-radius:6px;border:1px solid var(--border2);background:transparent;color:var(--muted);cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:1px;}
+.day-tab.mode-forecast{border-color:rgba(245,158,11,.3);color:rgba(245,158,11,.65);}
+.day-tab.mode-actual{border-color:rgba(34,197,94,.3);color:rgba(34,197,94,.65);}
+.day-tab.active.mode-forecast{background:var(--amber);border-color:var(--amber);color:#000;}
+.day-tab.active.mode-actual{background:var(--green);border-color:var(--green);color:#000;}
+.day-tab .dt-date{font-size:9px;opacity:.8;font-weight:400;}
+.kpi-row{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;}
+.kpi{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 14px;}
+.kpi-val{font-family:var(--mono);font-size:22px;font-weight:500;line-height:1.1;margin-bottom:2px;}
+.kpi-lbl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;}
+.kpi-val.teal{color:var(--teal);}.kpi-val.green{color:var(--green);}.kpi-val.amber{color:var(--amber);}.kpi-val.red{color:var(--red);}
+.seq-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;}
+@media(max-width:1400px){.seq-grid{grid-template-columns:repeat(2,1fr);}}
+.line-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;}
+.line-card-header{padding:12px 16px;background:var(--surface2);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;}
+.line-name{font-family:var(--mono);font-size:15px;font-weight:500;}
+.line-badge{font-size:10px;font-family:var(--mono);padding:3px 9px;border-radius:20px;font-weight:500;}
+.badge-night{background:rgba(167,139,250,.15);color:var(--purple);}
+.badge-day{background:var(--teal-dim);color:var(--teal);}
+.badge-capper{background:var(--blue-dim);color:var(--blue);}
+.line-card-body{padding:12px 16px;display:flex;flex-direction:column;gap:8px;min-height:60px;}
+.sku-row{display:flex;flex-direction:column;gap:3px;padding:8px 10px;border-radius:6px;background:var(--surface2);font-family:var(--mono);font-size:13px;}
+.sku-row-top{display:flex;align-items:center;gap:8px;width:100%;}
+.sku-time{font-size:11px;color:var(--muted);padding-left:26px;}
+.sku-time strong{color:var(--text);font-weight:500;}
+.sku-seq{color:var(--muted);width:20px;text-align:right;}
+.sku-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.sku-units{color:var(--teal);font-size:12px;}
+.sku-tag{font-size:10px;padding:2px 6px;border-radius:3px;}
+.tag-usda{background:rgba(245,158,11,.15);color:var(--amber);}
+.tag-wrap{background:rgba(96,165,250,.15);color:var(--blue);}
+.tag-sand{background:rgba(34,197,94,.15);color:var(--green);}
+.preproc-badge{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:#facc15;color:#000;font-size:9px;font-weight:700;flex-shrink:0;}
+.line-empty{color:var(--muted);font-family:var(--mono);font-size:11px;padding:8px 0;text-align:center;}
+.data-table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:11px;}
+.data-table th{text-align:left;font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;padding:6px 10px;border-bottom:.5px solid var(--border2);font-weight:400;}
+.data-table td{padding:7px 10px;border-bottom:.5px solid var(--border);}
+.data-table tr:hover td{background:var(--surface2);}
+.metrics-table{font-size:14px;}
+.metrics-table th{font-size:11px;padding:10px 14px;}
+.metrics-table td{padding:10px 14px;}
+.form-row{display:flex;flex-direction:column;gap:4px;margin-bottom:12px;}
+.form-label{font-size:10px;font-family:var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:.06em;}
+.form-input{background:var(--surface2);border:1px solid var(--border2);color:var(--text);font-family:var(--mono);font-size:12px;padding:7px 10px;border-radius:6px;outline:none;width:100%;}
+.form-input:focus{border-color:var(--teal);}
+.form-select{background:var(--surface2);border:1px solid var(--border2);color:var(--text);font-family:var(--mono);font-size:12px;padding:7px 10px;border-radius:6px;cursor:pointer;}
+.inline-input{background:var(--surface2);border:1px solid transparent;color:var(--text);font-family:var(--mono);font-size:11px;padding:3px 6px;border-radius:4px;outline:none;width:100%;}
+.inline-input:focus{border-color:var(--teal);}
+.btn{padding:7px 16px;border-radius:6px;font-family:var(--mono);font-size:11px;cursor:pointer;border:none;font-weight:500;white-space:nowrap;}
+.btn:hover{opacity:.85;}.btn:disabled{opacity:.4;cursor:not-allowed;}
+.btn-teal{background:var(--teal);color:#000;}.btn-green{background:var(--green);color:#000;}
+.btn-ghost{background:transparent;color:var(--muted);border:1px solid var(--border2);}
+.btn-ghost:hover{border-color:var(--teal);color:var(--teal);opacity:1;}
+.btn-danger{background:var(--red-dim);color:var(--red);border:1px solid rgba(239,68,68,.2);}
+.btn-sm{padding:3px 10px;font-size:10px;}
+.btn-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+.mode-badge{font-size:10px;font-family:var(--mono);padding:2px 8px;border-radius:4px;font-weight:500;}
+.mode-forecast{background:var(--amber-dim);color:var(--amber);}
+.mode-actual{background:var(--green-dim);color:var(--green);}
+.status{font-family:var(--mono);font-size:11px;padding:8px 12px;border-radius:6px;margin-top:8px;}
+.status-ok{background:var(--green-dim);color:var(--green);}
+.status-err{background:var(--red-dim);color:var(--red);}
+.status-info{background:var(--teal-dim);color:var(--teal);}
+.status-warn{background:var(--amber-dim);color:var(--amber);}
+.spinner{display:inline-block;width:11px;height:11px;border:2px solid var(--border2);border-top-color:var(--teal);border-radius:50%;animation:spin .6s linear infinite;margin-right:5px;}
+@keyframes spin{to{transform:rotate(360deg);}}
+.preview-wrap{overflow-x:auto;margin-top:12px;max-height:320px;overflow-y:auto;}
+.preview-table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:11px;}
+.preview-table th{position:sticky;top:0;background:var(--surface2);text-align:right;font-size:9px;color:var(--muted);padding:5px 8px;}
+.preview-table th:first-child{text-align:left;}
+.preview-table td{padding:5px 8px;border-bottom:.5px solid var(--border);text-align:right;}
+.preview-table td:first-child{text-align:left;color:var(--text);}
+.preview-table tr.total-row td{font-weight:500;color:var(--teal);}
+.empty{text-align:center;padding:60px 0;}
+.empty-icon{font-size:36px;margin-bottom:12px;}
+.empty-title{font-family:var(--mono);font-size:15px;margin-bottom:6px;}
+.empty-sub{font-size:12px;color:var(--muted);}
+.date-range-row{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;margin-bottom:12px;}
+.date-range-row .form-row{margin-bottom:0;}
+.sku-lib-controls{display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap;}
+.sku-active-dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:4px;}
+.dot-active{background:var(--green);}.dot-inactive{background:var(--muted);}
+::-webkit-scrollbar{width:4px;height:4px;}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:4px;}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.7);display:none;align-items:center;justify-content:center;z-index:100;}
+.modal-overlay.active{display:flex;}
+.modal-box{background:var(--surface);border:1px solid var(--border2);border-radius:12px;padding:24px;display:flex;flex-direction:column;gap:14px;}
+.modal-title{font-family:var(--mono);font-size:15px;font-weight:500;}
+.sku-row[draggable="true"]{cursor:grab;}
+.sku-row.dragging{opacity:0.35;}
+.line-card-body.drag-over{background:var(--teal-dim);outline:2px dashed var(--teal);outline-offset:-4px;}
+.sku-row.overridden{border-left:2px solid var(--amber);}
+</style>
+</head>
+<body>
+<div class="shell">
+  <header class="topbar">
+    <div class="wordmark">sequins ✨</div>
+    <div class="topbar-right">
+      <div id="syncIndicator" style="display:none;font-family:var(--mono);font-size:10px;color:var(--teal)">↻ syncing</div>
+      <div class="live-label"><div class="live-dot"></div>live</div>
+      <div id="userDisplay" style="font-family:var(--mono);font-size:11px;color:var(--muted)">—</div>
+    </div>
+  </header>
+  <nav class="sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-label">Plan</div>
+      <button class="nav-item active" onclick="switchView('sequence',this)"><span class="icon">📋</span>Line Sequence</button>
+      <button class="nav-item" onclick="switchView('workbench',this)"><span class="icon">🔧</span>Workbench</button>
+    </div>
+    <div class="nav-spacer"></div>
+    <div class="sidebar-section" id="adminNav" style="display:none">
+      <div class="sidebar-label">Admin</div>
+      <button class="nav-item" onclick="switchView('demand',this)"><span class="icon">📥</span>Load Demand</button>
+      <button class="nav-item" onclick="switchView('skus',this)"><span class="icon">🗂</span>SKU Library</button>
+      <button class="nav-item" onclick="switchView('lines',this)"><span class="icon">⚙️</span>Line Config</button>
+      <button class="nav-item" onclick="switchView('users',this)"><span class="icon">👥</span>Users</button>
+    </div>
+  </nav>
+  <main class="main">
+
+    <!-- LINE SEQUENCE -->
+    <div class="view active" id="view-sequence">
+      <div class="page-header">
+        <div><div class="page-title">Line Sequence</div><div class="page-sub" id="seqSubtitle">Select a week and day to view the plan</div></div>
+        <div class="btn-row"><span class="mode-badge mode-forecast" id="seqModeBadge" style="display:none"></span></div>
+      </div>
+      <div id="seqNoData" class="empty">
+        <div class="empty-icon">✨</div>
+        <div class="empty-title">No demand loaded yet</div>
+        <div class="empty-sub" id="seqNoDataSub">Go to Admin → Load Demand to get started</div>
+      </div>
+      <div id="seqContent" style="display:none">
+        <div class="card" style="padding:12px 18px"><div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><span style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Week</span><div class="week-bar" id="weekBar"></div></div></div>
+        <div class="card" style="padding:12px 18px"><div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><span style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Day</span><div class="day-tabs" id="dayTabs"></div></div></div>
+        <div class="card" style="padding-bottom:0">
+          <div class="card-title metrics-toggle-row" onclick="toggleMetrics()" style="margin-bottom:0;padding-bottom:12px">Per-Line Summary <span class="metrics-arrow" id="seqMetricsArrow">▾</span></div>
+          <div class="metrics-body" id="seqMetricsBody"><div style="overflow-x:auto;padding-bottom:4px" id="lineMetricsTable"></div></div>
+        </div>
+        <div class="card" id="noAttrsCard" style="display:none;border-color:rgba(239,68,68,.3)">
+          <div class="card-title"><span style="color:var(--red)">⚠ SKUs sequenced without real attributes</span></div>
+          <div id="noAttrsList" style="font-family:var(--mono);font-size:11px;color:var(--muted)"></div>
+        </div>
+        <div class="seq-grid" id="lineCards"></div>
+        <div class="card" id="unplacedCard" style="display:none">
+          <div class="card-title"><span style="color:var(--amber)">⚠ Unplaced SKUs</span></div>
+          <div id="unplacedList"></div>
+        </div>
+        <div class="kpi-row" style="grid-template-columns:repeat(6,1fr)">
+          <div class="kpi"><div class="kpi-val teal" id="k-skus">—</div><div class="kpi-lbl">SKUs scheduled</div></div>
+          <div class="kpi"><div class="kpi-val" id="k-units">—</div><div class="kpi-lbl">Total units</div></div>
+          <div class="kpi"><div class="kpi-val" id="k-lines">—</div><div class="kpi-lbl">Active lines</div></div>
+          <div class="kpi"><div class="kpi-val green" id="k-placed">—</div><div class="kpi-lbl">SKUs placed</div></div>
+          <div class="kpi"><div class="kpi-val amber" id="k-unplaced">—</div><div class="kpi-lbl">Unplaced</div></div>
+          <div class="kpi"><div class="kpi-val red" id="k-noattrs">—</div><div class="kpi-lbl">Missing attributes</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- WORKBENCH -->
+    <div class="view" id="view-workbench">
+      <div class="page-header">
+        <div><div class="page-title">Workbench</div><div class="page-sub" id="wbSubtitle">Same plan as Line Sequence</div></div>
+        <div class="btn-row"><span class="mode-badge mode-forecast" id="wbModeBadge" style="display:none"></span></div>
+      </div>
+      <div id="wbNoData" class="empty">
+        <div class="empty-icon">🔧</div>
+        <div class="empty-title">No demand loaded yet</div>
+        <div class="empty-sub">Go to Admin → Load Demand to get started</div>
+      </div>
+      <div id="wbContent" style="display:none">
+        <div class="card" style="padding:12px 18px"><div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><span style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Week</span><div class="week-bar" id="wbWeekBar"></div></div></div>
+        <div class="card" style="padding:12px 18px"><div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><span style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Day</span><div class="day-tabs" id="wbDayTabs"></div></div></div>
+        <div class="card" style="padding-bottom:0">
+          <div class="card-title metrics-toggle-row" onclick="toggleMetrics()" style="margin-bottom:0;padding-bottom:12px">Per-Line Summary <span class="metrics-arrow" id="wbMetricsArrow">▾</span></div>
+          <div class="metrics-body" id="wbMetricsBody"><div style="overflow-x:auto;padding-bottom:4px" id="wbLineMetricsTable"></div></div>
+        </div>
+        <div class="seq-grid" id="wbLineCards"></div>
+      </div>
+    </div>
+
+    <!-- MOVE MODAL -->
+    <div class="modal-overlay" id="moveModal">
+      <div class="modal-box" style="width:420px;text-align:left">
+        <div class="modal-title" id="moveModalTitle">Move SKU</div>
+        <div id="moveModalViolations" style="display:none;background:var(--red-dim);border:1px solid rgba(239,68,68,.3);border-radius:6px;padding:10px 12px;font-family:var(--mono);font-size:11px;color:var(--red);line-height:1.6"></div>
+        <div class="form-row"><label class="form-label">Note (optional)</label><input type="text" class="form-input" id="moveNoteInput" placeholder="e.g. short on HC today"></div>
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button class="btn btn-ghost" onclick="closeMoveModal()">Cancel</button>
+          <button class="btn btn-teal" onclick="confirmMove()">Confirm move</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- LOAD DEMAND -->
+    <div class="view" id="view-demand">
+      <div class="page-header"><div><div class="page-title">Load Demand</div><div class="page-sub">Pull from Compiled Forecast or Demands 2025 actuals</div></div></div>
+      <div class="card">
+        <div class="card-title"><span>Compiled Forecast</span><span class="mode-badge mode-forecast">forecast</span></div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:12px">Pulls per-SKU demand from the Summary tab. Forecast data will not overwrite actuals.</div>
+        <div class="btn-row" style="margin-bottom:12px">
+          <select class="form-select" id="forecastWeekSel" style="width:200px"><option value="">— loading weeks… —</option></select>
+          <button class="btn btn-ghost" onclick="fetchForecastPreview()" id="fetchFcBtn">Fetch week</button>
+          <button class="btn btn-teal" onclick="loadAllForecastWeeks()" id="loadAllBtn">⚡ Load all weeks</button>
+        </div>
+        <div id="fcStatus"></div><div id="fcPreview"></div>
+        <div id="fcPublishRow" style="display:none;margin-top:12px"><button class="btn btn-green" onclick="publishForecastWeek()" style="font-size:13px;padding:9px 24px">🚀 Publish to Schedule</button></div>
+      </div>
+      <div class="card">
+        <div class="card-title"><span>Actuals — Demands 2025</span><span class="mode-badge mode-actual">actual</span></div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:12px">Pulls confirmed demand from Demands 2025 for a specific date range.</div>
+        <div class="date-range-row">
+          <div class="form-row"><div class="form-label">From</div><input type="date" class="form-input" id="actualStart" style="width:160px"></div>
+          <div class="form-row"><div class="form-label">Through</div><input type="date" class="form-input" id="actualEnd" style="width:160px"></div>
+          <button class="btn btn-ghost" onclick="fetchActualPreview()" id="fetchActualBtn">Fetch</button>
+        </div>
+        <div id="actualStatus"></div><div id="actualPreview"></div>
+        <div id="actualPublishRow" style="display:none;margin-top:12px"><button class="btn btn-green" onclick="publishActuals()" style="font-size:13px;padding:9px 24px">🚀 Publish Actuals</button></div>
+      </div>
+      <div class="card">
+        <div class="card-title"><span>Loaded Demand</span><button class="btn btn-ghost btn-sm" onclick="renderLoadedDemand()">↻</button></div>
+        <div id="loadedDemandTable"><div style="font-family:var(--mono);font-size:11px;color:var(--muted)">No demand loaded.</div></div>
+      </div>
+    </div>
+
+    <!-- SKU LIBRARY -->
+    <div class="view" id="view-skus">
+      <div class="page-header">
+        <div><div class="page-title">SKU Library</div><div class="page-sub">Assembly SKUs only — CPG items should not appear here</div></div>
+        <div class="btn-row">
+          <button class="btn btn-ghost btn-sm" onclick="importSkusFromForecast()">↓ Pull attributes from source sheets</button>
+          <button class="btn btn-teal btn-sm" onclick="saveSkuLibrary()">Save changes</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="sku-lib-controls">
+          <input type="text" class="form-input" id="skuSearch" placeholder="Search SKUs…" style="width:200px" oninput="filterSkuTable()">
+          <label style="font-family:var(--mono);font-size:11px;color:var(--muted);display:flex;align-items:center;gap:5px;cursor:pointer"><input type="checkbox" id="showInactiveChk" onchange="filterSkuTable()" style="accent-color:var(--teal)"> Show inactive</label>
+          <span id="skuCount" style="font-family:var(--mono);font-size:10px;color:var(--muted)"></span>
+          <div style="margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--muted)"><span id="sc-total" style="color:var(--teal);font-weight:600">—</span> total SKUs</div>
+        </div>
+        <div style="overflow-x:auto">
+          <table class="data-table"><thead><tr>
+            <th>SKU</th><th>Category</th><th>Package</th><th>UPM</th><th>Allergens</th>
+            <th style="text-align:center"><div style="color:var(--teal);font-size:14px;font-weight:600" id="sc-capper">—</div>Capper</th>
+            <th style="text-align:center"><div style="color:var(--teal);font-size:14px;font-weight:600" id="sc-night">—</div>Night</th>
+            <th style="text-align:center"><div style="color:var(--teal);font-size:14px;font-weight:600" id="sc-preproc">—</div>Pre-Proc</th>
+            <th style="text-align:center"><div style="color:var(--teal);font-size:14px;font-weight:600" id="sc-active">—</div>Active</th>
+          </tr></thead><tbody id="skuTableBody"></tbody></table>
+        </div>
+        <div id="skuLibStatus" style="margin-top:8px"></div>
+      </div>
+    </div>
+
+    <!-- LINE CONFIG -->
+    <div class="view" id="view-lines">
+      <div class="page-header">
+        <div><div class="page-title">Line Config</div><div class="page-sub">Configure lines, headcount, and shift rules</div></div>
+        <button class="btn btn-teal btn-sm" id="saveLineConfigBtn" onclick="saveLineConfig()" style="display:none">Save changes</button>
+      </div>
+      <div class="card">
+        <div class="card-title">Active Lines</div>
+        <table class="data-table"><thead><tr><th>Line</th><th>Type</th><th style="text-align:right">HC</th><th>Pool</th><th>Start Time</th><th style="text-align:center">Mon</th><th style="text-align:center">Tue</th><th style="text-align:center">Wed</th><th style="text-align:center">Thu</th><th style="text-align:center">Fri</th><th style="text-align:center">Sat</th><th style="text-align:center">Sun</th></tr></thead><tbody id="lineConfigBody"></tbody></table>
+        <div id="lineConfigStatus" style="margin-top:8px"></div>
+      </div>
+      <div class="card">
+        <div class="card-title"><span>Sequencing Rules</span><button class="btn btn-teal btn-sm" id="saveRulesBtn" onclick="saveSequencingRules()" style="display:none">Save rules</button></div>
+        <div id="rulesBody" style="display:flex;flex-direction:column;gap:10px;font-family:var(--mono);font-size:11px"></div>
+      </div>
+    </div>
+
+    <!-- USERS -->
+    <div class="view" id="view-users">
+      <div class="page-header"><div><div class="page-title">Users</div><div class="page-sub">Admin and planner access</div></div></div>
+      <div class="card-grid">
+        <div class="card">
+          <div class="card-title">Admins <span style="color:var(--teal)">(full access)</span></div>
+          <div id="adminList" style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px"></div>
+          <div style="display:flex;gap:8px"><input type="text" class="form-input" id="newAdminEmail" placeholder="email@farmersfridge.com" style="flex:1"><button class="btn btn-teal btn-sm" onclick="addAdmin()">Add</button></div>
+          <div id="adminStatus" style="margin-top:8px"></div>
+        </div>
+        <div class="card">
+          <div class="card-title">Planners <span style="color:var(--amber)">(workbench access)</span></div>
+          <div id="plannerList" style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px"></div>
+          <div style="display:flex;gap:8px"><input type="text" class="form-input" id="newPlannerEmail" placeholder="email@farmersfridge.com" style="flex:1"><button onclick="addPlanner()" style="background:var(--amber);color:#000;padding:3px 10px;border-radius:6px;font-family:var(--mono);font-size:10px;cursor:pointer;border:none;font-weight:500">Add</button></div>
+          <div id="plannerStatus" style="margin-top:8px"></div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div><!-- /shell -->
+
+<script>
+var DAYS_ORDER=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+var DAY_SHORT={Monday:'Mon',Tuesday:'Tue',Wednesday:'Wed',Thursday:'Thu',Friday:'Fri',Saturday:'Sat',Sunday:'Sun'};
+var STATE={demand:{},skuLibrary:{},lineConfig:null,planners:[],overrides:{},sequencingRules:null};
+var CURRENT_USER=null,CURRENT_WEEK=null,CURRENT_DAY=null;
+var _pendingForecast=null,_pendingActuals=null,_pollInterval=null,_lastModified=null;
+var _metricsCollapsed=false;
+var _wbDragSku=null,_wbDragFromLine=null,_pendingMove=null;
+
+var DEFAULT_LINE_CONFIG=[
+  {id:'LINE-1',label:'LINE-1',type:'day',hc:9,pool:'salad',startTime:'06:00',days:{Mon:true,Tue:true,Wed:true,Thu:true,Fri:true,Sat:false,Sun:false}},
+  {id:'LINE-2',label:'LINE-2',type:'day',hc:10,pool:'sandwich',startTime:'06:00',days:{Mon:true,Tue:true,Wed:true,Thu:true,Fri:true,Sat:false,Sun:false}},
+  {id:'LINE-3',label:'LINE-3',type:'day',hc:10,pool:'wrap',startTime:'06:00',days:{Mon:true,Tue:true,Wed:true,Thu:true,Fri:true,Sat:false,Sun:false}},
+  {id:'LINE-4',label:'LINE-4',type:'day',hc:10,pool:'flex',startTime:'06:30',days:{Mon:true,Tue:true,Wed:true,Thu:true,Fri:true,Sat:false,Sun:false}},
+  {id:'LINE-5',label:'LINE-5',type:'day',hc:9,pool:'flex',startTime:'08:00',days:{Mon:true,Tue:true,Wed:true,Thu:true,Fri:false,Sat:false,Sun:false}},
+  {id:'LINE-6',label:'LINE-6 (Capper)',type:'capper',hc:10,pool:'bowl',startTime:'08:00',days:{Mon:true,Tue:true,Wed:true,Thu:true,Fri:true,Sat:false,Sun:false}},
+  {id:'LINE-7',label:'LINE-7',type:'day',hc:10,pool:'flex',startTime:'06:00',days:{Mon:false,Tue:false,Wed:false,Thu:false,Fri:false,Sat:false,Sun:false}},
+  {id:'LINE-0',label:'LINE-0 (Green Belt)',type:'day',hc:5,pool:'green',startTime:'00:20',days:{Mon:true,Tue:true,Wed:true,Thu:true,Fri:true,Sat:false,Sun:false}},
+  {id:'NIGHT-1',label:'Night Shift 1',type:'night',hc:9,pool:'night',startTime:'00:20',days:{Mon:true,Tue:true,Wed:true,Thu:true,Fri:false,Sat:false,Sun:true}},
+  {id:'NIGHT-2',label:'Night Shift 2',type:'night',hc:9,pool:'night',startTime:'00:20',days:{Mon:true,Tue:true,Wed:true,Thu:true,Fri:false,Sat:false,Sun:false}}
+];
+var DEFAULT_RULES={wrapLine:'LINE-3',sandwichLine:'LINE-2',noUsdaLines:['LINE-6'],greenBeltLine:'LINE-0',greenBeltPackages:['4oz jar'],capperLines:['LINE-6','NIGHT-1'],sausageSesameRule:true,targetRuntimeMin:510,slotCap:14,nightShiftUnitCap:9500,changeoverMin:8.5,hourlyRate:23.75};
+function getRules(){return STATE.sequencingRules||DEFAULT_RULES;}
+var SLOT_CAP=14,TARGET_MIN=510;
+
+// ── METRICS TOGGLE ─────────────────────────────────────────────────────────
+function toggleMetrics(){
+  _metricsCollapsed=!_metricsCollapsed;
+  ['seqMetricsBody','wbMetricsBody'].forEach(function(id){var el=document.getElementById(id);if(el)el.classList.toggle('collapsed',_metricsCollapsed);});
+  ['seqMetricsArrow','wbMetricsArrow'].forEach(function(id){var el=document.getElementById(id);if(el)el.classList.toggle('collapsed',_metricsCollapsed);});
+}
+
+// ── HELPERS ────────────────────────────────────────────────────────────────
+function parseAllergens(s){var lo=(s||'').toLowerCase();return{milk:lo.indexOf('milk')!==-1,soy:lo.indexOf('soy')!==-1,wheat:lo.indexOf('wheat')!==-1,egg:lo.indexOf('egg')!==-1,treeNuts:lo.indexOf('tree nut')!==-1,sesame:lo.indexOf('sesame')!==-1};}
+function allergenScore(a){return(a.milk?1:0)+(a.soy?1:0)+(a.wheat?1:0)+(a.egg?1:0)+(a.treeNuts?1:0)+(a.sesame?1:0);}
+function categoryToPool(cat){var m={'Salad':'salad','USDA Salad':'salad','Bowl':'bowl','Breakfast':'bowl','Sandwich':'sandwich','Retail Sandwich':'sandwich','Wrap':'wrap','USDA Handheld':'wrap','Handheld':'wrap','Snack':'flex','Meals':'flex','Protein':'flex'};return m[cat]||'flex';}
+function getWeeks(){return Object.keys(STATE.demand).sort();}
+function getDays(week){if(!STATE.demand[week])return[];return DAYS_ORDER.filter(function(d){return!!STATE.demand[week][d];});}
+function fmtUnits(n){return Number(n).toLocaleString();}
+function fmtClock(totalMin){var m=Math.round(totalMin),do_=Math.floor(m/1440);m=((m%1440)+1440)%1440;var hh=Math.floor(m/60),mm=m%60,ap=hh>=12?'PM':'AM',h12=hh%12===0?12:hh%12;return h12+':'+String(mm).padStart(2,'0')+' '+ap+(do_>0?' +'+do_:'');}
+
+// ── SEQUENCER ──────────────────────────────────────────────────────────────
+function runSequencer(){
+  if(!CURRENT_WEEK||!CURRENT_DAY)return null;
+  var dayData=STATE.demand[CURRENT_WEEK]&&STATE.demand[CURRENT_WEEK][CURRENT_DAY];
+  if(!dayData)return null;
+  var skus=dayData.skus||{},lib=STATE.skuLibrary,rules=getRules();
+  var lines=(STATE.lineConfig||DEFAULT_LINE_CONFIG).filter(function(l){var d=DAY_SHORT[CURRENT_DAY];return l.days&&l.days[d];});
+  var jobs=Object.keys(skus).map(function(skuName){
+    var qty=skus[skuName],key=skuName.toUpperCase(),meta=lib[key]||{};
+    var upm=parseFloat(meta.upm)||15,pkg=meta.packageType||'',al=parseAllergens(meta.allergens||'');
+    var pool=meta.category?categoryToPool(meta.category):'flex';
+    if(rules.greenBeltPackages.indexOf(pkg)!==-1)pool='green';
+    if(meta.nightShift)pool='night';
+    if(/shallow\s*box/i.test(pkg))pool='wrap';
+    if(/deep\s*box/i.test(pkg))pool='sandwich';
+    return{sku:skuName,qty:Math.round(qty),upm:upm,pkg:pkg,pool:pool,hasAttrs:!!meta.category||!!meta.packageType,isUSDA:key.indexOf('USDA')!==-1,hasSausage:key.indexOf('SAUSAGE')!==-1,hasSesame:al.sesame,isPreProcessed:!!meta.preProcessed,allergenScore:allergenScore(al),runtimeMin:qty/upm};
+  }).filter(function(j){return j.qty>0;});
+  var pools={wrap:[],sandwich:[],bowl:[],salad:[],flex:[],green:[],night:[]};
+  jobs.forEach(function(j){(pools[j.pool]||pools.flex).push(j);});
+  function sAl(a,b){if(a.isPreProcessed!==b.isPreProcessed)return a.isPreProcessed?-1:1;return a.isUSDA!==b.isUSDA?(a.isUSDA?-1:1):a.allergenScore-b.allergenScore;}
+  function sRt(a,b){if(a.isPreProcessed!==b.isPreProcessed)return a.isPreProcessed?-1:1;return b.runtimeMin-a.runtimeMin;}
+  pools.wrap.sort(sAl);pools.sandwich.sort(sAl);pools.salad.sort(sAl);
+  pools.bowl.sort(sRt);pools.flex.sort(sRt);pools.green.sort(sRt);pools.night.sort(sRt);
+  var lineState={};
+  lines.forEach(function(l){var p=(l.startTime||'06:00').split(':'),sm=(parseInt(p[0],10)||0)*60+(parseInt(p[1],10)||0);lineState[l.id]={slots:[],totalMin:0,totalUnits:0,hasSausage:false,hasSesame:false,startMin:sm,hc:l.hc};});
+  var placed={};
+  var poolMap={wrap:[rules.wrapLine,rules.sandwichLine],sandwich:[rules.sandwichLine,'LINE-4','LINE-5'],bowl:['LINE-6','LINE-4','LINE-5','LINE-1'],salad:['LINE-1','LINE-4','LINE-5','LINE-6'],flex:['LINE-4','LINE-5','LINE-1','LINE-6'],green:[rules.greenBeltLine],night:['NIGHT-1','NIGHT-2']};
+  function place(job,ls){var co=ls.slots.length>0?(rules.changeoverMin||0):0;job.changeoverMin=co;job.startClockMin=ls.startMin+ls.totalMin+co;ls.slots.push(job);ls.totalMin+=job.runtimeMin+co;job.endClockMin=ls.startMin+ls.totalMin;ls.totalUnits+=job.qty;if(job.hasSausage)ls.hasSausage=true;if(job.hasSesame)ls.hasSesame=true;placed[job.sku]=true;}
+  function seq(job,cids){for(var i=0;i<cids.length;i++){var lid=cids[i],ls=lineState[lid];if(!ls||ls.slots.length>=SLOT_CAP||ls.totalMin>=TARGET_MIN)continue;if(job.isUSDA&&rules.noUsdaLines.indexOf(lid)!==-1)continue;if(job.hasSausage&&ls.hasSesame)continue;if(job.hasSesame&&ls.hasSausage)continue;place(job,ls);return true;}return false;}
+  function bal(job,cids){var best=null,bl=Infinity;for(var i=0;i<cids.length;i++){var lid=cids[i],ls=lineState[lid];if(!ls||ls.slots.length>=SLOT_CAP||ls.totalMin>=TARGET_MIN)continue;if(job.isUSDA&&rules.noUsdaLines.indexOf(lid)!==-1)continue;if(job.hasSausage&&ls.hasSesame)continue;if(job.hasSesame&&ls.hasSausage)continue;if(ls.totalMin<bl){bl=ls.totalMin;best=lid;}}if(!best)return false;place(job,lineState[best]);return true;}
+  var SEQ={wrap:true,sandwich:true,green:true,night:true};
+  ['wrap','sandwich','bowl','salad','flex','green','night'].forEach(function(pool){var cids=(poolMap[pool]||[]).filter(function(lid){return!!lineState[lid];});var placer=SEQ[pool]?seq:bal;pools[pool].forEach(function(job){placer(job,cids);});});
+  return{lineState:lineState,lines:lines,jobs:jobs,unplaced:jobs.filter(function(j){return!placed[j.sku];}),rules:rules};
+}
+
+// ── LINE METRICS ───────────────────────────────────────────────────────────
+function renderLineMetricsTable(containerId,lineState,lines){
+  var el=document.getElementById(containerId);if(!el)return;
+  var rate=getRules().hourlyRate||23.75;
+  var html='<table class="data-table metrics-table"><thead><tr><th>Line</th><th style="text-align:right">Total Time</th><th style="text-align:right">Avg HC</th><th style="text-align:right">Changeovers</th><th>Start</th><th>End</th><th style="text-align:right">Units</th><th style="text-align:right">Labor Hrs</th><th style="text-align:right">$/Unit</th></tr></thead><tbody>';
+  var tMin=0,tCo=0,tUnits=0,tLH=0;
+  lines.forEach(function(line){
+    var ls=lineState[line.id],slots=(ls&&ls.slots)||[];
+    if(!slots.length)return;
+    var u={};slots.forEach(function(j){u[j.sku]=true;});
+    var co=Math.max(0,Object.keys(u).length-1),tM=ls.totalMin,avgHC=ls.hc,lh=(tM/60)*avgHC,units=ls.totalUnits,pu=units>0?(lh*rate)/units:0;
+    var hh=Math.floor(tM/60),mm=Math.round(tM%60);
+    html+='<tr><td>'+line.label+'</td><td style="text-align:right">'+hh+'h '+mm+'m</td><td style="text-align:right">'+avgHC+'</td><td style="text-align:right">'+co+'</td><td>'+fmtClock(ls.startMin)+'</td><td>'+fmtClock(ls.startMin+tM)+'</td><td style="text-align:right">'+fmtUnits(units)+'</td><td style="text-align:right">'+lh.toFixed(1)+'</td><td style="text-align:right">$'+pu.toFixed(3)+'</td></tr>';
+    tMin+=tM;tCo+=co;tUnits+=units;tLH+=lh;
+  });
+  var tHH=Math.floor(tMin/60),tMM=Math.round(tMin%60),bpu=tUnits>0?(tLH*rate)/tUnits:0;
+  html+='<tr style="border-top:1.5px solid var(--border2);font-weight:600"><td>Total</td><td style="text-align:right">'+tHH+'h '+tMM+'m</td><td style="text-align:right">—</td><td style="text-align:right">'+tCo+'</td><td>—</td><td>—</td><td style="text-align:right;color:var(--teal)">'+fmtUnits(tUnits)+'</td><td style="text-align:right">'+tLH.toFixed(1)+'</td><td style="text-align:right">$'+bpu.toFixed(3)+'</td></tr></tbody></table>';
+  el.innerHTML=html;
+}
+
+// ── WORKBENCH OVERRIDES ────────────────────────────────────────────────────
+function applyWorkbenchOverrides(lineState){
+  var overrides=(STATE.overrides[CURRENT_WEEK]&&STATE.overrides[CURRENT_WEEK][CURRENT_DAY])||{},touched={};
+  Object.keys(overrides).forEach(function(skuName){
+    var ov=overrides[skuName],job=null;
+    Object.keys(lineState).forEach(function(lid){var ls=lineState[lid];for(var i=0;i<ls.slots.length;i++){if(ls.slots[i].sku===skuName){job=ls.slots[i];ls.slots.splice(i,1);ls.totalMin-=job.runtimeMin;ls.totalUnits-=job.qty;touched[lid]=true;break;}}});
+    if(!job)return;
+    var tls=lineState[ov.line];
+    if(tls){tls.slots.push(job);tls.totalMin+=job.runtimeMin;tls.totalUnits+=job.qty;job.overridden=true;job.overrideViolations=ov.violations||[];job.overrideMovedBy=ov.movedBy;job.overrideNote=ov.note;touched[ov.line]=true;}
+  });
+  var rules=getRules();
+  Object.keys(touched).forEach(function(lid){var ls=lineState[lid],rm=0;ls.slots.forEach(function(job,idx){var co=idx>0?(rules.changeoverMin||0):0;job.changeoverMin=co;rm+=co;job.startClockMin=ls.startMin+rm;rm+=job.runtimeMin;job.endClockMin=ls.startMin+rm;});ls.totalMin=rm;});
+}
+
+// ── SHARED LINE CARD BUILDER ───────────────────────────────────────────────
+function buildLineCards(lines,lineState,draggable){
+  return lines.map(function(line){
+    var ls=lineState[line.id],slots=(ls&&ls.slots)||[];
+    var badge=line.type==='night'?'<span class="line-badge badge-night">night</span>':line.type==='capper'?'<span class="line-badge badge-capper">capper</span>':'<span class="line-badge badge-day">day</span>';
+    var pct=ls?Math.round(ls.totalMin/TARGET_MIN*100):0,pctColor=pct>95?'var(--amber)':pct>60?'var(--teal)':'var(--muted)';
+    var skuRows=slots.map(function(job,i){
+      var tag=job.isUSDA?'<span class="sku-tag tag-usda">USDA</span>':job.pool==='wrap'?'<span class="sku-tag tag-wrap">wrap</span>':job.pool==='sandwich'?'<span class="sku-tag tag-sand">sand</span>':'';
+      var preTag=job.isPreProcessed?'<span class="preproc-badge" title="Pre-processed">P</span>':'';
+      var ovTag=job.overridden?'<span class="sku-tag" style="background:var(--amber-dim);color:var(--amber)" title="Moved by '+(job.overrideMovedBy||'')+(job.overrideNote?' — '+job.overrideNote:'')+'">moved</span>':'';
+      var rc=job.overridden?'sku-row overridden':'sku-row';
+      var tl='<div class="sku-time"><strong>'+fmtClock(job.startClockMin)+'</strong> → <strong>'+fmtClock(job.endClockMin)+'</strong></div>';
+      if(draggable){var ss=job.sku.replace(/'/g,"\\'");return'<div class="'+rc+'" draggable="true" ondragstart="wbDragStart(event,\''+ss+'\',\''+line.id+'\')" ondragend="wbDragEnd(event)"><div class="sku-row-top"><span class="sku-seq">'+(i+1)+'</span><span class="sku-name" title="'+job.sku+'">'+job.sku+'</span>'+preTag+tag+ovTag+'<span class="sku-units">'+fmtUnits(job.qty)+'</span></div>'+tl+'</div>';}
+      return'<div class="'+rc+'"><div class="sku-row-top"><span class="sku-seq">'+(i+1)+'</span><span class="sku-name" title="'+job.sku+'">'+job.sku+'</span>'+preTag+tag+'<span class="sku-units">'+fmtUnits(job.qty)+'</span></div>'+tl+'</div>';
+    }).join('');
+    var footer='';
+    if(ls&&ls.totalUnits){footer='<div style="padding:6px 14px;border-top:1px solid var(--border);font-family:var(--mono);font-size:10px;color:var(--muted)"><div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>'+slots.length+' SKUs</span><span style="color:var(--teal)">'+fmtUnits(ls.totalUnits)+' units</span><span>'+Math.round(ls.totalMin)+'m run</span></div><div style="display:flex;justify-content:space-between"><span>'+fmtClock(ls.startMin)+' → '+fmtClock(ls.startMin+ls.totalMin)+'</span><span>HC '+ls.hc+'</span></div></div>';}
+    var ba=draggable?' id="wb-line-'+line.id+'" ondragover="wbDragOver(event)" ondragleave="wbDragLeave(event)" ondrop="wbDrop(event,\''+line.id+'\')"':'';
+    return'<div class="line-card"><div class="line-card-header"><span class="line-name">'+line.label+'</span><div style="display:flex;align-items:center;gap:8px"><span style="font-family:var(--mono);font-size:10px;color:'+pctColor+'">'+pct+'%</span>'+badge+'</div></div><div class="line-card-body"'+ba+'>'+(slots.length?skuRows:'<div class="line-empty">no SKUs assigned</div>')+'</div>'+footer+'</div>';
+  }).join('');
+}
+
+// ── VIOLATION CHECK ────────────────────────────────────────────────────────
+function checkLineViolations(job,lineId,lineState,rules,lcById){
+  var v=[],ls=lineState[lineId];if(!ls)return['Line not found'];var cfg=lcById[lineId];
+  if(job.isUSDA&&rules.noUsdaLines.indexOf(lineId)!==-1)v.push('USDA SKU not allowed on '+lineId);
+  if(job.pool==='wrap'&&rules.wrapLine&&lineId!==rules.wrapLine)v.push('Wraps are locked to '+rules.wrapLine);
+  if(job.pool==='sandwich'&&rules.sandwichLine&&lineId!==rules.sandwichLine)v.push('Sandwiches are locked to '+rules.sandwichLine);
+  if(job.hasSausage&&ls.hasSesame)v.push('Sausage cannot share a line with sesame');
+  if(job.hasSesame&&ls.hasSausage)v.push('Sesame cannot share a line with sausage');
+  if(ls.slots.length>=rules.slotCap)v.push('Line at slot cap ('+rules.slotCap+' SKUs)');
+  if(ls.totalMin+job.runtimeMin>rules.targetRuntimeMin)v.push('Line would exceed target runtime');
+  if(cfg&&cfg.type==='night'&&job.isUSDA)v.push('USDA not allowed on night shift');
+  return v;
+}
+
+// ── DRAG + DROP ────────────────────────────────────────────────────────────
+function wbDragStart(e,sku,fromLine){_wbDragSku=sku;_wbDragFromLine=fromLine;e.target.classList.add('dragging');e.dataTransfer.effectAllowed='move';}
+function wbDragEnd(e){e.target.classList.remove('dragging');}
+function wbDragOver(e){e.preventDefault();e.currentTarget.classList.add('drag-over');}
+function wbDragLeave(e){e.currentTarget.classList.remove('drag-over');}
+function wbDrop(e,toLine){
+  e.preventDefault();e.currentTarget.classList.remove('drag-over');
+  if(!_wbDragSku||!_wbDragFromLine)return;if(_wbDragFromLine===toLine){_wbDragSku=null;_wbDragFromLine=null;return;}
+  var stash=window._wbLastResult;if(!stash)return;
+  var lineState=stash.lineState,rules=stash.rules,lcById=stash.lineConfigById;
+  var fromLs=lineState[_wbDragFromLine],job=null;
+  if(fromLs){for(var i=0;i<fromLs.slots.length;i++){if(fromLs.slots[i].sku===_wbDragSku){job=fromLs.slots[i];break;}}}
+  if(!job){_wbDragSku=null;_wbDragFromLine=null;return;}
+  var violations=checkLineViolations(job,toLine,lineState,rules,lcById);
+  var sku=_wbDragSku,fromLine=_wbDragFromLine;_wbDragSku=null;_wbDragFromLine=null;
+  if(violations.length===0){commitMove(sku,fromLine,toLine,violations,'');}
+  else{_pendingMove={sku:sku,fromLine:fromLine,toLine:toLine,violations:violations};openMoveModal(_pendingMove);}
+}
+function commitMove(sku,fromLine,toLine,violations,note){
+  if(!STATE.overrides[CURRENT_WEEK])STATE.overrides[CURRENT_WEEK]={};
+  if(!STATE.overrides[CURRENT_WEEK][CURRENT_DAY])STATE.overrides[CURRENT_WEEK][CURRENT_DAY]={};
+  STATE.overrides[CURRENT_WEEK][CURRENT_DAY][sku]={line:toLine,movedBy:(CURRENT_USER&&CURRENT_USER.email)||'',movedAt:new Date().toISOString(),violations:violations,note:note||''};
+  renderWorkbench();renderSequence();
+  google.script.run.withFailureHandler(function(err){alert('Move not saved: '+err.message);}).saveSkuMove(CURRENT_WEEK,CURRENT_DAY,sku,fromLine,toLine,violations,note);
+}
+function openMoveModal(move){
+  document.getElementById('moveModalTitle').textContent='Move '+move.sku+' → '+move.toLine;
+  var vEl=document.getElementById('moveModalViolations');
+  if(move.violations.length){vEl.style.display='';vEl.innerHTML='⚠ This move breaks:<br>'+move.violations.map(function(v){return'• '+v;}).join('<br>');}else{vEl.style.display='none';}
+  document.getElementById('moveNoteInput').value='';
+  document.getElementById('moveModal').classList.add('active');
+}
+function closeMoveModal(){document.getElementById('moveModal').classList.remove('active');_pendingMove=null;}
+function confirmMove(){if(!_pendingMove)return;var note=document.getElementById('moveNoteInput').value.trim(),m=_pendingMove;closeMoveModal();commitMove(m.sku,m.fromLine,m.toLine,m.violations,note);}
+
+// ── RENDER: LINE SEQUENCE ──────────────────────────────────────────────────
+function renderSequence(){
+  var weeks=getWeeks(),hasDemand=weeks.length>0;
+  document.getElementById('seqNoData').style.display=hasDemand?'none':'';
+  document.getElementById('seqContent').style.display=hasDemand?'':'none';
+  if(!hasDemand)return;
+  document.getElementById('weekBar').innerHTML=weeks.map(function(w){return'<button class="week-chip '+(w===CURRENT_WEEK?'active':'')+'" onclick="setWeek(\''+w+'\')">'+w+'</button>';}).join('');
+  var days=getDays(CURRENT_WEEK);if(!CURRENT_DAY||days.indexOf(CURRENT_DAY)===-1)CURRENT_DAY=days[0];
+  document.getElementById('dayTabs').innerHTML=days.map(function(d){var dd=STATE.demand[CURRENT_WEEK]&&STATE.demand[CURRENT_WEEK][d],mode=(dd&&dd.mode)||'none',ds=(dd&&dd.date)?new Date(dd.date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}):'';return'<button class="day-tab mode-'+mode+' '+(d===CURRENT_DAY?'active':'')+'" onclick="setDay(\''+d+'\')">'+DAY_SHORT[d]+(ds?'<span class="dt-date">'+ds+'</span>':'')+'</button>';}).join('');
+  var dayData=STATE.demand[CURRENT_WEEK]&&STATE.demand[CURRENT_WEEK][CURRENT_DAY],mb=document.getElementById('seqModeBadge');
+  if(dayData){mb.style.display='';mb.textContent=dayData.mode;mb.className='mode-badge mode-'+dayData.mode;}else{mb.style.display='none';}
+  document.getElementById('seqSubtitle').textContent=(CURRENT_WEEK&&CURRENT_DAY)?CURRENT_WEEK+' · '+CURRENT_DAY:'';
+  var result=runSequencer();if(!result)return;
+  applyWorkbenchOverrides(result.lineState);
+  var lineState=result.lineState,lines=result.lines,jobs=result.jobs,unplaced=result.unplaced;
+  var tu=jobs.reduce(function(s,j){return s+j.qty;},0),al=lines.filter(function(l){return lineState[l.id]&&lineState[l.id].slots.length>0;}).length,naj=jobs.filter(function(j){return!j.hasAttrs;});
+  document.getElementById('k-skus').textContent=fmtUnits(jobs.length);
+  document.getElementById('k-units').textContent=fmtUnits(tu);
+  document.getElementById('k-lines').textContent=al+'/'+lines.length;
+  document.getElementById('k-placed').textContent=jobs.length-unplaced.length;
+  document.getElementById('k-unplaced').textContent=unplaced.length;
+  document.getElementById('k-unplaced').className='kpi-val '+(unplaced.length>0?'amber':'green');
+  document.getElementById('k-noattrs').textContent=naj.length;
+  document.getElementById('k-noattrs').className='kpi-val '+(naj.length>0?'red':'green');
+  var nac=document.getElementById('noAttrsCard');
+  if(naj.length>0){nac.style.display='';document.getElementById('noAttrsList').innerHTML=naj.map(function(j){return'<div class="sku-row" style="background:transparent"><span class="sku-name">'+j.sku+'</span><span class="sku-units">'+fmtUnits(j.qty)+'</span></div>';}).join('');}else{nac.style.display='none';}
+  document.getElementById('lineCards').innerHTML=buildLineCards(lines,lineState,false);
+  renderLineMetricsTable('lineMetricsTable',lineState,lines);
+  var uc=document.getElementById('unplacedCard');
+  if(unplaced.length>0){uc.style.display='';document.getElementById('unplacedList').innerHTML=unplaced.map(function(j){return'<div class="sku-row"><span class="sku-name">'+j.sku+'</span><span class="sku-units">'+fmtUnits(j.qty)+'</span><span style="font-size:10px;color:var(--muted)">'+j.pool+'</span></div>';}).join('');}else{uc.style.display='none';}
+}
+function setWeek(w){CURRENT_WEEK=w;CURRENT_DAY=getDays(w)[0]||null;renderSequence();renderWorkbench();}
+function setDay(d){CURRENT_DAY=d;renderSequence();renderWorkbench();}
+
+// ── RENDER: WORKBENCH ──────────────────────────────────────────────────────
+function renderWorkbench(){
+  var weeks=getWeeks(),hasDemand=weeks.length>0;
+  document.getElementById('wbNoData').style.display=hasDemand?'none':'';
+  document.getElementById('wbContent').style.display=hasDemand?'':'none';
+  if(!hasDemand)return;
+  document.getElementById('wbWeekBar').innerHTML=weeks.map(function(w){return'<button class="week-chip '+(w===CURRENT_WEEK?'active':'')+'" onclick="setWeek(\''+w+'\')">'+w+'</button>';}).join('');
+  var days=getDays(CURRENT_WEEK);if(!CURRENT_DAY||days.indexOf(CURRENT_DAY)===-1)CURRENT_DAY=days[0];
+  document.getElementById('wbDayTabs').innerHTML=days.map(function(d){var dd=STATE.demand[CURRENT_WEEK]&&STATE.demand[CURRENT_WEEK][d],mode=(dd&&dd.mode)||'none',ds=(dd&&dd.date)?new Date(dd.date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}):'';return'<button class="day-tab mode-'+mode+' '+(d===CURRENT_DAY?'active':'')+'" onclick="setDay(\''+d+'\')">'+DAY_SHORT[d]+(ds?'<span class="dt-date">'+ds+'</span>':'')+'</button>';}).join('');
+  var dayData=STATE.demand[CURRENT_WEEK]&&STATE.demand[CURRENT_WEEK][CURRENT_DAY],mb=document.getElementById('wbModeBadge');
+  if(dayData){mb.style.display='';mb.textContent=dayData.mode;mb.className='mode-badge mode-'+dayData.mode;}else{mb.style.display='none';}
+  document.getElementById('wbSubtitle').textContent=(CURRENT_WEEK&&CURRENT_DAY)?CURRENT_WEEK+' · '+CURRENT_DAY:'Same plan as Line Sequence';
+  var result=runSequencer();if(!result)return;
+  var lineState=result.lineState,lines=result.lines,rules=result.rules;
+  applyWorkbenchOverrides(lineState);
+  var lcById={};lines.forEach(function(l){lcById[l.id]=l;});
+  document.getElementById('wbLineCards').innerHTML=buildLineCards(lines,lineState,true);
+  renderLineMetricsTable('wbLineMetricsTable',lineState,lines);
+  window._wbLastResult={lineState:lineState,lines:lines,rules:rules,lineConfigById:lcById};
+}
+
+// ── DEMAND ─────────────────────────────────────────────────────────────────
+function renderLoadedDemand(){var weeks=getWeeks(),el=document.getElementById('loadedDemandTable');if(!weeks.length){el.innerHTML='<div style="font-family:var(--mono);font-size:11px;color:var(--muted)">No demand loaded.</div>';return;}var html='<table class="data-table"><thead><tr><th>Week</th><th>Day</th><th>Date</th><th>Mode</th><th style="text-align:right">SKUs</th><th style="text-align:right">Total Units</th><th>Published by</th></tr></thead><tbody>';weeks.forEach(function(wk){getDays(wk).forEach(function(day){var dd=STATE.demand[wk][day],tot=Object.keys(dd.skus||{}).reduce(function(s,k){return s+dd.skus[k];},0),date=dd.date?new Date(dd.date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'—';html+='<tr><td>'+wk+'</td><td>'+day+'</td><td>'+date+'</td><td><span class="mode-badge mode-'+dd.mode+'">'+dd.mode+'</span></td><td style="text-align:right">'+Object.keys(dd.skus||{}).length+'</td><td style="text-align:right">'+fmtUnits(Math.round(tot))+'</td><td style="color:var(--muted)">'+(dd.publishedBy||'—')+'</td></tr>';});});html+='</tbody></table>';el.innerHTML=html;}
+function loadForecastWeeks(){google.script.run.withSuccessHandler(function(weeks){var sel=document.getElementById('forecastWeekSel');sel.innerHTML=weeks.length?weeks.map(function(w){return'<option value="'+w.label+'">'+w.label+'</option>';}).join(''):'<option value="">— no weeks found —</option>';}).withFailureHandler(function(){document.getElementById('forecastWeekSel').innerHTML='<option value="">— error —</option>';}).fetchForecastWeeks();}
+function fetchForecastPreview(){var weekLabel=document.getElementById('forecastWeekSel').value;if(!weekLabel)return;var btn=document.getElementById('fetchFcBtn');btn.disabled=true;btn.innerHTML='<span class="spinner"></span>Fetching…';document.getElementById('fcPreview').innerHTML='';document.getElementById('fcPublishRow').style.display='none';google.script.run.withSuccessHandler(function(data){btn.disabled=false;btn.textContent='Fetch week';_pendingForecast=data;renderForecastPreview(data);document.getElementById('fcPublishRow').style.display='';document.getElementById('fcStatus').innerHTML='';}).withFailureHandler(function(err){btn.disabled=false;btn.textContent='Fetch week';document.getElementById('fcStatus').innerHTML='<div class="status status-err">'+err.message+'</div>';}).fetchForecastWeekData(weekLabel);}
+function renderForecastPreview(data){var skuData=data.skuData,dates=data.dates,weekLabel=data.weekLabel;var days=DAYS_ORDER.filter(function(d){return skuData[d]&&Object.keys(skuData[d]).length;});var skuSet={};days.forEach(function(d){Object.keys(skuData[d]).forEach(function(s){skuSet[s]=true;});});var allSkus=Object.keys(skuSet).sort(),totals={};days.forEach(function(d){totals[d]=Object.keys(skuData[d]).reduce(function(s,k){return s+skuData[d][k];},0);});var html='<div class="preview-wrap"><table class="preview-table"><thead><tr><th>SKU</th>'+days.map(function(d){return'<th>'+DAY_SHORT[d]+'<br><span style="font-size:9px;opacity:.6;font-weight:400">'+(dates[d]?new Date(dates[d]+'T12:00:00').toLocaleDateString('en-US',{month:'numeric',day:'numeric'}):'—')+'</span></th>';}).join('')+'</tr></thead><tbody>';allSkus.forEach(function(sku){html+='<tr><td>'+sku+'</td>'+days.map(function(d){return'<td>'+fmtUnits(skuData[d][sku]||0)+'</td>';}).join('')+'</tr>';});html+='<tr class="total-row"><td>Total</td>'+days.map(function(d){return'<td>'+fmtUnits(Math.round(totals[d]))+'</td>';}).join('')+'</tr></tbody></table></div><div style="font-size:10px;font-family:var(--mono);color:var(--muted);margin-top:8px">'+allSkus.length+' SKUs · '+days.length+' days · <strong style="color:var(--amber)">'+weekLabel+' · forecast</strong></div>';document.getElementById('fcPreview').innerHTML=html;}
+function publishForecastWeek(){if(!_pendingForecast)return;var btn=document.querySelector('#fcPublishRow button');btn.disabled=true;btn.innerHTML='<span class="spinner"></span>Publishing…';var skuData=_pendingForecast.skuData,dates=_pendingForecast.dates,weekLabel=_pendingForecast.weekLabel;google.script.run.withSuccessHandler(function(result){btn.disabled=false;btn.innerHTML='🚀 Publish to Schedule';if(!STATE.demand[weekLabel])STATE.demand[weekLabel]={};Object.keys(skuData).forEach(function(day){STATE.demand[weekLabel][day]={skus:skuData[day],mode:'forecast',date:dates[day]||'',publishedBy:(CURRENT_USER&&CURRENT_USER.email)||'',publishedAt:new Date().toISOString()};});if(!CURRENT_WEEK)CURRENT_WEEK=weekLabel;document.getElementById('fcPreview').innerHTML='<div class="status status-ok">✓ Published '+result.daysLoaded+' days for '+weekLabel+'</div>';document.getElementById('fcPublishRow').style.display='none';_pendingForecast=null;renderLoadedDemand();renderSequence();}).withFailureHandler(function(err){btn.disabled=false;btn.innerHTML='🚀 Publish to Schedule';document.getElementById('fcStatus').innerHTML='<div class="status status-err">'+err.message+'</div>';}).publishForecastWeek(weekLabel,skuData,dates);}
+function loadAllForecastWeeks(){var btn=document.getElementById('loadAllBtn'),el=document.getElementById('fcStatus');btn.disabled=true;btn.innerHTML='<span class="spinner"></span>Loading all weeks…';google.script.run.withSuccessHandler(function(weeks){if(!weeks.length){btn.disabled=false;btn.innerHTML='⚡ Load all weeks';el.innerHTML='<div class="status status-warn">No weeks found</div>';return;}var loaded=0,total=weeks.length;function loadNext(i){if(i>=total){btn.disabled=false;btn.innerHTML='⚡ Load all weeks';el.innerHTML='<div class="status status-ok">✓ Loaded '+loaded+' of '+total+' weeks</div>';renderLoadedDemand();renderSequence();return;}google.script.run.withSuccessHandler(function(data){var skuData=data.skuData,dates=data.dates,weekLabel=data.weekLabel;if(!STATE.demand[weekLabel])STATE.demand[weekLabel]={};Object.keys(skuData).forEach(function(day){var ex=STATE.demand[weekLabel][day];if(ex&&ex.mode==='actual')return;STATE.demand[weekLabel][day]={skus:skuData[day],mode:'forecast',date:dates[day]||'',publishedBy:'bulk load',publishedAt:new Date().toISOString()};});loaded++;el.innerHTML='<div class="status status-info"><span class="spinner"></span>Loading… '+loaded+'/'+total+'</div>';google.script.run.withSuccessHandler(function(){loadNext(i+1);}).withFailureHandler(function(){loadNext(i+1);}).publishForecastWeek(weekLabel,skuData,dates);}).withFailureHandler(function(){loadNext(i+1);}).fetchForecastWeekData(weeks[i].label);}loadNext(0);}).withFailureHandler(function(err){btn.disabled=false;btn.innerHTML='⚡ Load all weeks';el.innerHTML='<div class="status status-err">'+err.message+'</div>';}).fetchForecastWeeks();}
+function fetchActualPreview(){var start=document.getElementById('actualStart').value,end=document.getElementById('actualEnd').value;if(!start||!end)return;var btn=document.getElementById('fetchActualBtn');btn.disabled=true;btn.innerHTML='<span class="spinner"></span>Fetching…';document.getElementById('actualPreview').innerHTML='';document.getElementById('actualPublishRow').style.display='none';google.script.run.withSuccessHandler(function(data){btn.disabled=false;btn.textContent='Fetch';_pendingActuals=data;renderActualPreview(data);document.getElementById('actualPublishRow').style.display='';document.getElementById('actualStatus').innerHTML='';}).withFailureHandler(function(err){btn.disabled=false;btn.textContent='Fetch';document.getElementById('actualStatus').innerHTML='<div class="status status-err">'+err.message+'</div>';}).fetchActualDemand(start,end);}
+function renderActualPreview(data){var skuData=data.skuData,byDate=data.byDate,skuSet={};Object.keys(skuData).forEach(function(k){Object.keys(skuData[k]).forEach(function(s){skuSet[s]=true;});});var allSkus=Object.keys(skuSet).sort();var html='<div class="preview-wrap"><table class="preview-table"><thead><tr><th>Day</th><th>Date</th><th style="text-align:right">SKUs</th><th style="text-align:right">Total Units</th></tr></thead><tbody>';Object.keys(byDate).sort().forEach(function(date){var info=byDate[date],dayD=skuData[info.day+'|'+date]||{},tot=Object.keys(dayD).reduce(function(s,k){return s+dayD[k];},0);html+='<tr><td>'+info.day+'</td><td>'+new Date(date+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})+'</td><td style="text-align:right">'+Object.keys(dayD).length+'</td><td style="text-align:right">'+fmtUnits(Math.round(tot))+'</td></tr>';});var grand=Object.keys(skuData).reduce(function(s,k){return s+Object.keys(skuData[k]).reduce(function(s2,k2){return s2+skuData[k][k2];},0);},0);html+='<tr class="total-row"><td colspan="2">Total</td><td style="text-align:right">'+allSkus.length+' SKUs</td><td style="text-align:right">'+fmtUnits(grand)+'</td></tr></tbody></table></div><div style="font-size:10px;font-family:var(--mono);color:var(--muted);margin-top:8px">'+Object.keys(byDate).length+' days · <strong style="color:var(--green)">actuals</strong></div>';document.getElementById('actualPreview').innerHTML=html;}
+function publishActuals(){if(!_pendingActuals)return;var btn=document.querySelector('#actualPublishRow button');btn.disabled=true;btn.innerHTML='<span class="spinner"></span>Publishing…';var skuData=_pendingActuals.skuData,byDate=_pendingActuals.byDate,entries=[];Object.keys(byDate).forEach(function(date){var info=byDate[date],skus=skuData[info.day+'|'+date]||{};if(!Object.keys(skus).length)return;var d=new Date(date+'T12:00:00'),jan1=new Date(d.getFullYear(),0,1),wkNum=Math.ceil((((d-jan1)/86400000)+jan1.getDay()+1)/7);entries.push({weekLabel:'Wk '+wkNum+' · '+d.getFullYear(),day:info.day,date:date,skus:skus});});google.script.run.withSuccessHandler(function(result){btn.disabled=false;btn.innerHTML='🚀 Publish Actuals';entries.forEach(function(entry){if(!STATE.demand[entry.weekLabel])STATE.demand[entry.weekLabel]={};STATE.demand[entry.weekLabel][entry.day]={skus:entry.skus,mode:'actual',date:entry.date,publishedBy:(CURRENT_USER&&CURRENT_USER.email)||'',publishedAt:new Date().toISOString()};});if(!CURRENT_WEEK&&entries.length)CURRENT_WEEK=entries[0].weekLabel;document.getElementById('actualPreview').innerHTML='<div class="status status-ok">✓ Published '+result.daysLoaded+' days of actuals</div>';document.getElementById('actualPublishRow').style.display='none';_pendingActuals=null;renderLoadedDemand();renderSequence();}).withFailureHandler(function(err){btn.disabled=false;btn.innerHTML='🚀 Publish Actuals';document.getElementById('actualStatus').innerHTML='<div class="status status-err">'+err.message+'</div>';}).publishActualDays(entries);}
+
+// ── SKU LIBRARY ────────────────────────────────────────────────────────────
+function renderSkuLibrary(){filterSkuTable();}
+function filterSkuTable(){
+  var search=(document.getElementById('skuSearch').value||'').toLowerCase(),showInactive=document.getElementById('showInactiveChk').checked,lib=STATE.skuLibrary,allKeys=Object.keys(lib);
+  updateSkuCounts();
+  var skus=allKeys.filter(function(k){if(!showInactive&&lib[k].active===false)return false;return k.toLowerCase().indexOf(search)!==-1;}).sort();
+  document.getElementById('skuCount').textContent=skus.length+' SKUs';
+  document.getElementById('skuTableBody').innerHTML=skus.map(function(key){var s=lib[key];function chk(f){return'<input type="checkbox" '+(s[f]?'checked':'')+' style="accent-color:var(--teal)" onchange="updateSkuField(\''+key+'\',\''+f+'\',this.checked)">';}return'<tr><td><span class="sku-active-dot '+(s.active!==false?'dot-active':'dot-inactive')+'"></span>'+key+'</td><td><input class="inline-input" value="'+(s.category||'')+'" onchange="updateSkuField(\''+key+'\',\'category\',this.value)" style="width:110px"></td><td><input class="inline-input" value="'+(s.packageType||'')+'" onchange="updateSkuField(\''+key+'\',\'packageType\',this.value)" style="width:100px"></td><td><input class="inline-input" type="number" value="'+(s.upm||'')+'" onchange="updateSkuField(\''+key+'\',\'upm\',parseFloat(this.value))" style="width:120px"></td><td><input class="inline-input" value="'+(s.allergens||'')+'" onchange="updateSkuField(\''+key+'\',\'allergens\',this.value)" style="width:140px"></td><td style="text-align:center">'+chk('capper')+'</td><td style="text-align:center">'+chk('nightShift')+'</td><td style="text-align:center">'+chk('preProcessed')+'</td><td style="text-align:center">'+chk('active')+'</td></tr>';}).join('');
+}
+var _skuTimer=null;
+function updateSkuField(key,field,val){if(!STATE.skuLibrary[key])STATE.skuLibrary[key]={};STATE.skuLibrary[key][field]=val;updateSkuCounts();var el=document.getElementById('skuLibStatus');if(el)el.innerHTML='<div class="status status-info">Unsaved — auto-saving…</div>';if(_skuTimer)clearTimeout(_skuTimer);_skuTimer=setTimeout(function(){saveSkuLibrary(true);},1500);}
+function updateSkuCounts(){var lib=STATE.skuLibrary,k=Object.keys(lib);document.getElementById('sc-capper').textContent=k.filter(function(x){return lib[x].capper;}).length;document.getElementById('sc-night').textContent=k.filter(function(x){return lib[x].nightShift;}).length;document.getElementById('sc-preproc').textContent=k.filter(function(x){return lib[x].preProcessed;}).length;document.getElementById('sc-active').textContent=k.filter(function(x){return lib[x].active!==false;}).length;document.getElementById('sc-total').textContent=k.length;}
+function saveSkuLibrary(isAutoSave){var el=document.getElementById('skuLibStatus');if(el)el.innerHTML='<div class="status status-info"><span class="spinner"></span>Saving…</div>';google.script.run.withSuccessHandler(function(){if(el){el.innerHTML='<div class="status status-ok">✓ Saved'+(isAutoSave?' (auto)':'')+'</div>';setTimeout(function(){if(el.innerHTML.indexOf('Saved')!==-1)el.innerHTML='';},3000);}}).withFailureHandler(function(err){if(el)el.innerHTML='<div class="status status-err">⚠ SAVE FAILED: '+err.message+'</div>';}).saveSkuLibrary(STATE.skuLibrary);}
+function importSkusFromForecast(){var allSkuNamesSet={};Object.keys(STATE.demand).forEach(function(wk){Object.keys(STATE.demand[wk]).forEach(function(day){Object.keys(STATE.demand[wk][day].skus||{}).forEach(function(sku){allSkuNamesSet[sku]=true;});});});var allSkuNames=Object.keys(allSkuNamesSet),el=document.getElementById('skuLibStatus');if(!allSkuNames.length){el.innerHTML='<div class="status status-warn">No demand loaded yet — load demand first.</div>';return;}el.innerHTML='<div class="status status-info"><span class="spinner"></span>Pulling attributes…</div>';google.script.run.withSuccessHandler(function(result){var attributes=result.attributes,notFound=result.notFound,added=0,updated=0;allSkuNames.forEach(function(sku){var key=sku.toUpperCase(),normKey=key.replace(/[^A-Z0-9]/g,''),attrs=attributes[normKey];if(!STATE.skuLibrary[key]){STATE.skuLibrary[key]={active:true,category:'',packageType:'',upm:'',allergens:'',capper:false,nightShift:false,preProcessed:false};added++;}if(attrs){if(attrs.category)STATE.skuLibrary[key].category=attrs.category;if(attrs.packageType)STATE.skuLibrary[key].packageType=attrs.packageType;if(attrs.allergens)STATE.skuLibrary[key].allergens=attrs.allergens;if(attrs.upm)STATE.skuLibrary[key].upm=attrs.upm;updated++;}});renderSkuLibrary();var nfMsg=notFound.length?('<br><span style="color:var(--amber)">⚠ '+notFound.length+' not found: '+notFound.slice(0,10).join(', ')+(notFound.length>10?'…':'')+'</span>'):'';el.innerHTML='<div class="status status-info"><span class="spinner"></span>'+added+' new, '+updated+' matched — saving…</div>';google.script.run.withSuccessHandler(function(){el.innerHTML='<div class="status status-ok">✓ Saved — '+added+' new, '+updated+' matched'+nfMsg+'</div>';}).withFailureHandler(function(err){el.innerHTML='<div class="status status-err">⚠ Pull ok, SAVE FAILED: '+err.message+'</div>';}).saveSkuLibrary(STATE.skuLibrary);}).withFailureHandler(function(err){el.innerHTML='<div class="status status-err">'+err.message+'</div>';}).fetchSkuAttributesFor(allSkuNames);}
+
+// ── LINE CONFIG ────────────────────────────────────────────────────────────
+function renderLineConfig(){var lines=STATE.lineConfig||DEFAULT_LINE_CONFIG,days=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];document.getElementById('lineConfigBody').innerHTML=lines.map(function(l,i){var dc=days.map(function(d){return'<td style="text-align:center"><input type="checkbox" '+(l.days[d]?'checked':'')+' style="accent-color:var(--teal)" onchange="updateLineDay('+i+',\''+d+'\',this.checked)"></td>';}).join('');var tc=l.type==='night'?'var(--purple)':l.type==='capper'?'var(--blue)':'var(--teal)';return'<tr><td>'+l.label+'</td><td><span style="color:'+tc+'">'+l.type+'</span></td><td style="text-align:right"><input class="inline-input" type="number" value="'+l.hc+'" onchange="updateLineHC('+i+',this.value)" style="width:45px;text-align:right"></td><td><input class="inline-input" value="'+l.pool+'" onchange="updateLinePool('+i+',this.value)" style="width:80px"></td><td><input class="inline-input" type="time" value="'+(l.startTime||'06:00')+'" onchange="updateLineStartTime('+i+',this.value)" style="width:100px"></td>'+dc+'</tr>';}).join('');}
+function updateLineDay(i,d,val){var l=STATE.lineConfig||DEFAULT_LINE_CONFIG;l[i].days[d]=val;STATE.lineConfig=l;scheduleLineConfigAutoSave();}
+function updateLineHC(i,val){var l=STATE.lineConfig||DEFAULT_LINE_CONFIG;l[i].hc=parseInt(val)||0;STATE.lineConfig=l;scheduleLineConfigAutoSave();}
+function updateLinePool(i,val){var l=STATE.lineConfig||DEFAULT_LINE_CONFIG;l[i].pool=val;STATE.lineConfig=l;scheduleLineConfigAutoSave();}
+function updateLineStartTime(i,val){var l=STATE.lineConfig||DEFAULT_LINE_CONFIG;l[i].startTime=val;STATE.lineConfig=l;scheduleLineConfigAutoSave();}
+var _lcTimer=null;
+function scheduleLineConfigAutoSave(){if(_lcTimer)clearTimeout(_lcTimer);_lcTimer=setTimeout(function(){saveLineConfig(true);},1500);}
+function saveLineConfig(isAutoSave){var lines=STATE.lineConfig||DEFAULT_LINE_CONFIG,btn=document.getElementById('saveLineConfigBtn'),el=document.getElementById('lineConfigStatus'),orig=btn?btn.textContent:'';if(btn){btn.disabled=true;btn.innerHTML='<span class="spinner"></span>Saving…';}if(el)el.innerHTML='<div class="status status-info"><span class="spinner"></span>Saving…</div>';google.script.run.withSuccessHandler(function(){STATE.lineConfig=lines;renderLineConfig();if(btn){btn.disabled=false;btn.textContent='✓ Saved';setTimeout(function(){btn.textContent=orig||'Save changes';},2000);}if(el){el.innerHTML='<div class="status status-ok">✓ Saved'+(isAutoSave?' (auto)':'')+'</div>';setTimeout(function(){el.innerHTML='';},3000);}}).withFailureHandler(function(err){if(btn){btn.disabled=false;btn.textContent=orig||'Save changes';}if(el)el.innerHTML='<div class="status status-err">⚠ SAVE FAILED: '+err.message+'</div>';}).saveLineConfig(lines);}
+
+// ── RULES ──────────────────────────────────────────────────────────────────
+function renderRulesAccess(){var ce=!!window._canEditRules,sb=document.getElementById('saveRulesBtn'),lb=document.getElementById('saveLineConfigBtn');if(sb)sb.style.display=ce?'':'none';if(lb)lb.style.display=ce?'':'none';}
+function renderRules(){
+  var rules=getRules(),ce=!!window._canEditRules,el=document.getElementById('rulesBody');if(!el)return;
+  function field(label,key,val,type){if(!ce)return'<div style="display:flex;gap:8px;align-items:center"><span style="color:var(--muted);width:220px">'+label+'</span><span style="color:var(--text)">'+(Array.isArray(val)?val.join(', '):String(val))+'</span></div>';if(type==='bool')return'<div style="display:flex;gap:8px;align-items:center"><span style="color:var(--muted);width:220px">'+label+'</span><input type="checkbox" '+(val?'checked':'')+' style="accent-color:var(--teal);width:14px;height:14px" onchange="updateRule(\''+key+'\',this.checked)"></div>';if(type==='list')return'<div style="display:flex;gap:8px;align-items:center"><span style="color:var(--muted);width:220px">'+label+'</span><input class="inline-input" value="'+(Array.isArray(val)?val.join(', '):val)+'" onchange="updateRuleList(\''+key+'\',this.value)" style="width:200px"></div>';return'<div style="display:flex;gap:8px;align-items:center"><span style="color:var(--muted);width:220px">'+label+'</span><input class="inline-input" type="'+(type==='num'?'number':'text')+'" value="'+val+'" onchange="updateRule(\''+key+'\','+(type==='num'?'parseFloat(this.value)':'this.value')+')" style="width:120px"></div>';}
+  el.innerHTML=[field('Wrap line','wrapLine',rules.wrapLine,'text'),field('Sandwich line','sandwichLine',rules.sandwichLine,'text'),field('No USDA on lines','noUsdaLines',rules.noUsdaLines,'list'),field('Green Belt line','greenBeltLine',rules.greenBeltLine,'text'),field('Green Belt packages','greenBeltPackages',rules.greenBeltPackages,'list'),field('Capper lines','capperLines',rules.capperLines,'list'),field('Sausage/sesame rule','sausageSesameRule',rules.sausageSesameRule,'bool'),field('Target runtime (min)','targetRuntimeMin',rules.targetRuntimeMin,'num'),field('Slot cap (SKUs/line)','slotCap',rules.slotCap,'num'),field('Night shift unit cap','nightShiftUnitCap',rules.nightShiftUnitCap,'num'),field('Changeover time (min)','changeoverMin',rules.changeoverMin,'num'),field('Hourly labor rate ($)','hourlyRate',rules.hourlyRate,'num')].join('');
+}
+function updateRule(key,val){if(!STATE.sequencingRules)STATE.sequencingRules=JSON.parse(JSON.stringify(DEFAULT_RULES));STATE.sequencingRules[key]=val;}
+function updateRuleList(key,val){if(!STATE.sequencingRules)STATE.sequencingRules=JSON.parse(JSON.stringify(DEFAULT_RULES));STATE.sequencingRules[key]=val.split(',').map(function(s){return s.trim();}).filter(function(s){return!!s;});}
+function saveSequencingRules(){var el=document.getElementById('saveRulesBtn');if(el){el.disabled=true;el.innerHTML='<span class="spinner"></span>Saving…';}google.script.run.withSuccessHandler(function(){if(el){el.disabled=false;el.textContent='Save rules';}renderSequence();}).withFailureHandler(function(){if(el){el.disabled=false;el.textContent='Save rules';}}).saveSequencingRules(getRules());}
+
+// ── USERS ──────────────────────────────────────────────────────────────────
+function renderUsers(){google.script.run.withSuccessHandler(function(list){document.getElementById('adminList').innerHTML=list.map(function(email){return'<div style="display:flex;align-items:center;justify-content:space-between;background:var(--surface2);border-radius:5px;padding:5px 10px"><span style="font-family:var(--mono);font-size:11px">'+email+'</span><button class="btn btn-danger btn-sm" onclick="removeAdmin(\''+email+'\')">✕</button></div>';}).join('');}).withFailureHandler(function(){}).getAdminListForClient();var planners=STATE.planners||[];document.getElementById('plannerList').innerHTML=planners.map(function(email){return'<div style="display:flex;align-items:center;justify-content:space-between;background:var(--surface2);border-radius:5px;padding:5px 10px"><span style="font-family:var(--mono);font-size:11px">'+email+'</span><button class="btn btn-danger btn-sm" onclick="removePlanner(\''+email+'\')">✕</button></div>';}).join('');}
+function addAdmin(){var email=document.getElementById('newAdminEmail').value.trim().toLowerCase(),el=document.getElementById('adminStatus');if(email.indexOf('@')===-1)return;google.script.run.withSuccessHandler(function(){document.getElementById('newAdminEmail').value='';renderUsers();el.innerHTML='<div class="status status-ok">✓ Added '+email+'</div>';setTimeout(function(){el.innerHTML='';},3000);}).withFailureHandler(function(err){el.innerHTML='<div class="status status-err">'+err.message+'</div>';}).addAdmin(email);}
+function removeAdmin(email){google.script.run.withSuccessHandler(renderUsers).withFailureHandler(function(){}).removeAdmin(email);}
+function addPlanner(){var email=document.getElementById('newPlannerEmail').value.trim().toLowerCase();if(email.indexOf('@')===-1)return;if(STATE.planners.indexOf(email)===-1)STATE.planners.push(email);google.script.run.withSuccessHandler(function(){document.getElementById('newPlannerEmail').value='';renderUsers();}).withFailureHandler(function(){}).savePlanners(STATE.planners);}
+function removePlanner(email){STATE.planners=STATE.planners.filter(function(e){return e!==email;});google.script.run.withSuccessHandler(renderUsers).withFailureHandler(function(){}).savePlanners(STATE.planners);}
+
+// ── POLLING ────────────────────────────────────────────────────────────────
+function startPolling(){if(_pollInterval)return;_pollInterval=setInterval(function(){google.script.run.withSuccessHandler(function(ts){if(!ts||ts===_lastModified)return;_lastModified=ts;document.getElementById('syncIndicator').style.display='';google.script.run.withSuccessHandler(function(s){document.getElementById('syncIndicator').style.display='none';if(!s)return;if(s.demand)STATE.demand=s.demand;if(s.skuLibrary)STATE.skuLibrary=s.skuLibrary;if(s.lineConfig)STATE.lineConfig=s.lineConfig;if(s.planners)STATE.planners=s.planners;if(s.overrides)STATE.overrides=s.overrides;if(s.sequencingRules)STATE.sequencingRules=s.sequencingRules;renderSequence();}).withFailureHandler(function(){document.getElementById('syncIndicator').style.display='none';}).getState();}).withFailureHandler(function(){}).getLastModified();},8000);}
+
+// ── NAV ────────────────────────────────────────────────────────────────────
+function switchView(name,btn){
+  var views=document.querySelectorAll('.view');for(var i=0;i<views.length;i++)views[i].classList.remove('active');
+  var navs=document.querySelectorAll('.nav-item');for(var i=0;i<navs.length;i++)navs[i].classList.remove('active');
+  document.getElementById('view-'+name).classList.add('active');
+  if(btn)btn.classList.add('active');
+  var mainEl=document.querySelector('.main');if(mainEl)mainEl.scrollTop=0;
+  if(name==='demand'){loadForecastWeeks();renderLoadedDemand();}
+  if(name==='skus')renderSkuLibrary();
+  if(name==='lines'){renderLineConfig();renderRules();renderRulesAccess();}
+  if(name==='users')renderUsers();
+  if(name==='sequence')renderSequence();
+  if(name==='workbench')renderWorkbench();
+}
+
+// ── INIT ───────────────────────────────────────────────────────────────────
+window.onload=function(){
+  google.script.run.withSuccessHandler(function(user){
+    CURRENT_USER=user;
+    document.getElementById('userDisplay').textContent=user.name;
+    if(user.isAdmin||user.isPlanner||user.canEditRules)document.getElementById('adminNav').style.display='';
+    window._canEditRules=!!(user.isAdmin||user.canEditRules);
+    renderRulesAccess();
+  }).withFailureHandler(function(){}).getCurrentUser();
+
+  google.script.run.withSuccessHandler(function(s){
+    if(s){
+      if(s.demand)STATE.demand=s.demand;
+      if(s.skuLibrary)STATE.skuLibrary=s.skuLibrary;
+      if(s.lineConfig)STATE.lineConfig=s.lineConfig;
+      if(s.planners)STATE.planners=s.planners;
+      if(s.overrides)STATE.overrides=s.overrides;
+      if(s.sequencingRules)STATE.sequencingRules=s.sequencingRules;
+      _lastModified=s.lastModified||null;
+    }
+    var weeks=getWeeks();
+    if(weeks.length){
+      var todayStr=new Date().toISOString().slice(0,10),todayName=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][new Date().getDay()],foundWeek=null,foundDay=null;
+      for(var i=0;i<weeks.length;i++){for(var j=0;j<DAYS_ORDER.length;j++){var dd=STATE.demand[weeks[i]]&&STATE.demand[weeks[i]][DAYS_ORDER[j]];if(dd&&dd.date===todayStr){foundWeek=weeks[i];foundDay=DAYS_ORDER[j];break;}}if(foundWeek)break;}
+      if(foundWeek){CURRENT_WEEK=foundWeek;CURRENT_DAY=foundDay;}
+      else{CURRENT_WEEK=weeks[0];var days=getDays(CURRENT_WEEK);CURRENT_DAY=days.indexOf(todayName)!==-1?todayName:(days[0]||null);}
+    }
+    renderSequence();startPolling();
+  }).withFailureHandler(function(err){document.getElementById('seqNoDataSub').textContent='Error loading state: '+err.message;}).getState();
+
+  var today=new Date(),plus2=new Date(today);plus2.setDate(plus2.getDate()+2);
+  document.getElementById('actualStart').value=today.toISOString().slice(0,10);
+  document.getElementById('actualEnd').value=plus2.toISOString().slice(0,10);
+};
+
+document.addEventListener('visibilitychange',function(){if(document.hidden&&_pollInterval){clearInterval(_pollInterval);_pollInterval=null;}else if(!document.hidden&&!_pollInterval)startPolling();});
+</script>
+</body>
+</html>
