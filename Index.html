@@ -1,6 +1,10 @@
 <!--
   Sequins ✨ — Index.html
-  v0.3.2 — 2026-06-30
+  v0.3.4 — 2026-06-30
+  - Add SKU button in SKU Library (short-term fix for zero-demand SKUs)
+  - Backlog: auto-populate library from demand fetch, stop using library as fetch gate
+  - Demand Debug panel (admin-only) on Line Sequence view
+    Surfaces stored-vs-sequencer unit count diff with SKU-level breakdown
   - Collapsible Per-Line Summary (both views, shared state)
   - buildLineCards() shared helper
   - Structural fix: removed 2 extra </div> closing main+shell prematurely
@@ -199,6 +203,10 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--s
           <div class="card-title"><span style="color:var(--amber)">⚠ Unplaced SKUs</span></div>
           <div id="unplacedList"></div>
         </div>
+        <div class="card" id="demandDebugCard" style="display:none">
+          <div class="card-title metrics-toggle-row" onclick="toggleDemandDebug()">Demand Debug <span class="metrics-arrow" id="demandDebugArrow">▾</span></div>
+          <div class="metrics-body" id="demandDebugBody" style="padding-bottom:8px"></div>
+        </div>
         <div class="kpi-row" style="grid-template-columns:repeat(6,1fr)">
           <div class="kpi"><div class="kpi-val teal" id="k-skus">—</div><div class="kpi-lbl">SKUs scheduled</div></div>
           <div class="kpi"><div class="kpi-val" id="k-units">—</div><div class="kpi-lbl">Total units</div></div>
@@ -287,6 +295,9 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--s
       </div>
       <div class="card">
         <div class="sku-lib-controls">
+          <input type="text" class="form-input" id="newSkuInput" placeholder="SKU_NAME_TO_ADD" style="width:190px" onkeydown="if(event.key==='Enter')addSkuManually()">
+          <button class="btn btn-teal btn-sm" onclick="addSkuManually()">+ Add SKU</button>
+          <div style="width:1px;height:20px;background:var(--border2);margin:0 4px"></div>
           <input type="text" class="form-input" id="skuSearch" placeholder="Search SKUs…" style="width:200px" oninput="filterSkuTable()">
           <label style="font-family:var(--mono);font-size:11px;color:var(--muted);display:flex;align-items:center;gap:5px;cursor:pointer"><input type="checkbox" id="showInactiveChk" onchange="filterSkuTable()" style="accent-color:var(--teal)"> Show inactive</label>
           <span id="skuCount" style="font-family:var(--mono);font-size:10px;color:var(--muted)"></span>
@@ -525,6 +536,61 @@ function openMoveModal(move){
 function closeMoveModal(){document.getElementById('moveModal').classList.remove('active');_pendingMove=null;}
 function confirmMove(){if(!_pendingMove)return;var note=document.getElementById('moveNoteInput').value.trim(),m=_pendingMove;closeMoveModal();commitMove(m.sku,m.fromLine,m.toLine,m.violations,note);}
 
+// ── DEMAND DEBUG ──────────────────────────────────────────────────────────
+var _debugCollapsed=false;
+function toggleDemandDebug(){
+  _debugCollapsed=!_debugCollapsed;
+  var b=document.getElementById('demandDebugBody'),a=document.getElementById('demandDebugArrow');
+  if(b)b.classList.toggle('collapsed',_debugCollapsed);
+  if(a)a.classList.toggle('collapsed',_debugCollapsed);
+}
+function renderDemandDebug(storedSkus,sequencerJobs){
+  var card=document.getElementById('demandDebugCard'),el=document.getElementById('demandDebugBody');
+  if(!card||!el)return;
+  if(!CURRENT_USER||!CURRENT_USER.isAdmin){card.style.display='none';return;}
+  card.style.display='';
+  // Build sequencer map
+  var seqMap={};
+  sequencerJobs.forEach(function(j){seqMap[j.sku]=j.qty;});
+  // Totals
+  var storedTotal=Object.keys(storedSkus).reduce(function(s,k){return s+(storedSkus[k]||0);},0);
+  var seqTotal=sequencerJobs.reduce(function(s,j){return s+j.qty;},0);
+  // Find all SKUs across both sets
+  var allSkus={};
+  Object.keys(storedSkus).forEach(function(k){allSkus[k]=true;});
+  sequencerJobs.forEach(function(j){allSkus[j.sku]=true;});
+  // Diffs: SKUs present in one side only, or with different rounded qtys
+  var diffs=Object.keys(allSkus).filter(function(sku){
+    return Math.round(storedSkus[sku]||0)!==Math.round(seqMap[sku]||0);
+  });
+  var delta=seqTotal-Math.round(storedTotal);
+  var hasDiff=diffs.length>0||delta!==0;
+  var html='<div style="display:flex;gap:24px;align-items:center;margin-bottom:10px;font-family:var(--mono);font-size:12px;flex-wrap:wrap">';
+  html+='<span>Stored demand: <strong style="color:var(--amber)">'+fmtUnits(Math.round(storedTotal))+'</strong> ('+Object.keys(storedSkus).length+' SKUs)</span>';
+  html+='<span>Sequencer input: <strong style="color:var(--teal)">'+fmtUnits(seqTotal)+'</strong> ('+sequencerJobs.length+' jobs)</span>';
+  html+='<span>Δ: <strong style="color:'+(hasDiff?'var(--red)':'var(--green)');
+  html+='">'+( delta>=0?'+':'')+delta+'</strong></span>';
+  html+='</div>';
+  if(diffs.length>0){
+    html+='<div style="font-family:var(--mono);font-size:11px;color:var(--red);margin-bottom:8px">⚠ '+diffs.length+' SKU(s) with mismatched quantities:</div>';
+    html+='<div style="overflow-x:auto"><table class="data-table"><thead><tr><th>SKU</th><th style="text-align:right">Stored</th><th style="text-align:right">Sequencer</th><th style="text-align:right">Δ</th></tr></thead><tbody>';
+    diffs.sort().forEach(function(sku){
+      var s=Math.round(storedSkus[sku]||0),q=seqMap[sku]||0,d=q-s;
+      html+='<tr><td style="font-family:var(--mono)">'+sku+'</td>';
+      html+='<td style="text-align:right">'+(s>0?fmtUnits(s):'<span style="color:var(--red)">—</span>')+'</td>';
+      html+='<td style="text-align:right">'+(q>0?fmtUnits(q):'<span style="color:var(--red)">—</span>')+'</td>';
+      html+='<td style="text-align:right;color:'+(d>0?'var(--amber)':'var(--muted)');
+      html+='">'+(d>0?'+':'')+d+'</td></tr>';
+    });
+    html+='</tbody></table></div>';
+  }else if(delta!==0){
+    html+='<div style="font-family:var(--mono);font-size:11px;color:var(--amber)">⚠ No per-SKU diffs but totals differ by '+delta+' — likely a rounding accumulation issue (sum-then-round vs round-then-sum).</div>';
+  }else{
+    html+='<div style="font-family:var(--mono);font-size:11px;color:var(--green)">✓ Stored demand and sequencer input match exactly for this day.</div>';
+  }
+  el.innerHTML=html;
+}
+
 // ── RENDER: LINE SEQUENCE ──────────────────────────────────────────────────
 function renderSequence(){
   var weeks=getWeeks(),hasDemand=weeks.length>0;
@@ -555,6 +621,7 @@ function renderSequence(){
   renderLineMetricsTable('lineMetricsTable',lineState,lines);
   var uc=document.getElementById('unplacedCard');
   if(unplaced.length>0){uc.style.display='';document.getElementById('unplacedList').innerHTML=unplaced.map(function(j){return'<div class="sku-row"><span class="sku-name">'+j.sku+'</span><span class="sku-units">'+fmtUnits(j.qty)+'</span><span style="font-size:10px;color:var(--muted)">'+j.pool+'</span></div>';}).join('');}else{uc.style.display='none';}
+  if(CURRENT_USER&&CURRENT_USER.isAdmin){renderDemandDebug(dayData?dayData.skus||{}:{},jobs);}
 }
 function setWeek(w){CURRENT_WEEK=w;CURRENT_DAY=getDays(w)[0]||null;renderSequence();renderWorkbench();}
 function setDay(d){CURRENT_DAY=d;renderSequence();renderWorkbench();}
@@ -593,6 +660,24 @@ function publishActuals(){if(!_pendingActuals)return;var btn=document.querySelec
 
 // ── SKU LIBRARY ────────────────────────────────────────────────────────────
 function renderSkuLibrary(){filterSkuTable();}
+function addSkuManually(){
+  var input=document.getElementById('newSkuInput');
+  var raw=(input.value||'').trim().toUpperCase().replace(/[^A-Z0-9_]/g,'');
+  if(!raw)return;
+  var el=document.getElementById('skuLibStatus');
+  if(STATE.skuLibrary[raw]){
+    document.getElementById('skuSearch').value=raw;
+    filterSkuTable();
+    input.value='';
+    if(el)el.innerHTML='<div class="status status-warn">'+raw+' already in library — highlighted below</div>';
+    return;
+  }
+  STATE.skuLibrary[raw]={active:true,category:'',packageType:'',upm:'',allergens:'',capper:false,nightShift:false,preProcessed:false};
+  input.value='';
+  document.getElementById('skuSearch').value=raw;
+  filterSkuTable();
+  if(el)el.innerHTML='<div class="status status-info">Added '+raw+' — fill in attributes and save</div>';
+}
 function filterSkuTable(){
   var search=(document.getElementById('skuSearch').value||'').toLowerCase(),showInactive=document.getElementById('showInactiveChk').checked,lib=STATE.skuLibrary,allKeys=Object.keys(lib);
   updateSkuCounts();
