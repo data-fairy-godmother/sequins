@@ -208,16 +208,12 @@ function fetchForecastWeekData(weekLabel) {
   const dates   = {};
   weekCols.forEach(wc => { dates[wc.day] = wc.date; });
 
-  const state  = getState() || {};
-  const skuLib = state.skuLibrary || {};
-
   for (let r = 11; r < allData.length; r++) {
     const skuVal = allData[r][1];
     if (!skuVal) continue;
     const skuName = String(skuVal).trim();
     if (!skuName || skuName === 'SKU') continue;
-    const inLib = Object.keys(skuLib).length === 0 || skuLib[skuName.toUpperCase()];
-    if (!inLib) continue;
+    // No library gate
     weekCols.forEach(wc => {
       const qty = Math.round(parseFloat(allData[r][wc.col]) || 0);
       if (qty <= 0) return;
@@ -243,8 +239,6 @@ function fetchActualDemand(startDate, endDate) {
   const weekSheets = allSheets.filter(s => /\d{4}\s+Week\s+\d+/i.test(s.getName()));
   if (!weekSheets.length) throw new Error('No weekly tabs found in Demands 2025. Expected names like "2026 Week 27".');
 
-  const state  = getState() || {};
-  const skuLib = state.skuLibrary || {};
   const skuData = {};
   const byDate  = {};
 
@@ -279,8 +273,7 @@ function fetchActualDemand(startDate, endDate) {
       const skuName = String(skuVal).trim();
       if (!skuName) continue;
       if (skuName.toUpperCase() === DEMANDS_STOP_SKU) break;
-      const inLib = Object.keys(skuLib).length === 0 || skuLib[skuName.toUpperCase()];
-      if (!inLib) continue;
+      // No library gate
       dateCols.forEach(dc => {
         const qty = Math.round(parseFloat(allData[r][dc.col]) || 0);
         if (qty <= 0) return;
@@ -566,6 +559,21 @@ function saveSkuMove(weekLabel, day, sku, fromLine, toLine, violations, note) {
   });
 
   saveStateAsEditor(state);
+  return { ok: true };
+}
+
+
+// ─── PUBLISHED PLAN ───────────────────────────────────────────────────────────
+function savePublishedPlan(weekLabel, day, snapshot) {
+  const user = getCurrentUser();
+  if (!user.isAdmin && !user.isPlanner && !user.canEditRules) throw new Error('Not authorized');
+  let state = getState() || {};
+  if (!state.publishedPlans) state.publishedPlans = {};
+  if (!state.publishedPlans[weekLabel]) state.publishedPlans[weekLabel] = {};
+  state.publishedPlans[weekLabel][day] = snapshot;
+  writeAuditLog_(user.email, 'publish_plan', weekLabel, day, Object.keys(snapshot.lineState || {}).length + ' lines');
+  state.lastModified = new Date().toISOString();
+  PropertiesService.getScriptProperties().setProperty(STATE_KEY, JSON.stringify(state));
   return { ok: true };
 }
 

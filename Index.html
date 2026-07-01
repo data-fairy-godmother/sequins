@@ -147,6 +147,23 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--s
 .legend-desc{font-size:9px;color:var(--muted);line-height:1.3;font-family:var(--mono);}
 .main.wb-active{background:#e8f8f4;}
 .main.wb-active .page-title{color:#1a2e28;}.main.wb-active .page-sub{color:#3a5a50;}.main.wb-active .card-title{color:#3a5a50;}
+.legend-row{display:flex;align-items:center;gap:7px;padding:2px 4px;}
+.legend-desc{font-size:9px;color:var(--muted);line-height:1.3;font-family:var(--mono);}
+.main.wb-active{background:#e2f5ee;}
+.main.wb-active .page-title{color:#1a2e28;}
+.main.wb-active .page-sub{color:#3a5a50;}
+.main.wb-active .card-title{color:#3a5a50;}
+.day-strip{display:flex;gap:8px;flex-wrap:wrap;}
+.day-card{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:8px 14px;border-radius:8px;cursor:pointer;min-width:72px;border:2px solid transparent;transition:all .15s;user-select:none;}
+.day-card:hover{filter:brightness(1.12);}
+.day-card.selected{border-color:#fff;box-shadow:0 0 0 2px rgba(255,255,255,0.3);}
+.day-card.mode-actual{background:#166534;color:#bbf7d0;}
+.day-card.mode-actual .dc-day{color:#86efac;}
+.day-card.mode-forecast{background:#78350f;color:#fef3c7;}
+.day-card.mode-forecast .dc-day{color:#fcd34d;}
+.dc-day{font-family:var(--mono);font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px;}
+.dc-date{font-family:var(--mono);font-size:13px;font-weight:500;}
+.dc-pub{width:6px;height:6px;border-radius:50%;background:#4ade80;margin-top:4px;}
 </style>
 </head>
 <body>
@@ -195,7 +212,10 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--s
     <div class="view active" id="view-sequence">
       <div class="page-header">
         <div><div class="page-title">Line Sequence</div><div class="page-sub" id="seqSubtitle">Select a week and day to view the plan</div></div>
-        <div class="btn-row"><span class="mode-badge mode-forecast" id="seqModeBadge" style="display:none"></span></div>
+        <div class="btn-row">
+          <select class="form-select" id="seqWeekSel" style="font-size:11px;padding:5px 10px;display:none" onchange="setWeek(this.value)"></select>
+          <span class="mode-badge mode-forecast" id="seqModeBadge" style="display:none"></span>
+        </div>
       </div>
       <div id="seqNoData" class="empty">
         <div class="empty-icon">✨</div>
@@ -203,8 +223,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--s
         <div class="empty-sub" id="seqNoDataSub">Go to Admin → Load Demand to get started</div>
       </div>
       <div id="seqContent" style="display:none">
-        <div class="card" style="padding:12px 18px"><div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><span style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Week</span><div class="week-bar" id="weekBar"></div></div></div>
-        <div class="card" style="padding:12px 18px"><div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><span style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Day</span><div class="day-tabs" id="dayTabs"></div></div></div>
+        <div class="card" style="padding:12px 18px"><div class="day-strip" id="seqDayStrip"></div></div>
         <div class="card" style="padding-bottom:0">
           <div class="card-title metrics-toggle-row" onclick="toggleMetrics()" style="margin-bottom:0;padding-bottom:12px">Per-Line Summary <span class="metrics-arrow" id="seqMetricsArrow">▾</span></div>
           <div class="metrics-body" id="seqMetricsBody"><div style="overflow-x:auto;padding-bottom:4px" id="lineMetricsTable"></div></div>
@@ -238,6 +257,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--s
       <div class="page-header">
         <div><div class="page-title">Workbench</div><div class="page-sub" id="wbSubtitle">Same plan as Line Sequence</div></div>
         <div class="btn-row">
+          <select class="form-select" id="wbWeekSel" style="font-size:11px;padding:5px 10px;display:none" onchange="setWeek(this.value)"></select>
           <span class="mode-badge mode-forecast" id="wbModeBadge" style="display:none"></span>
           <button class="btn btn-green" id="publishPlanBtn" style="display:none" onclick="publishPlan()">🚀 Publish Plan</button>
         </div>
@@ -248,8 +268,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--s
         <div class="empty-sub">Go to Admin → Load Demand to get started</div>
       </div>
       <div id="wbContent" style="display:none">
-        <div class="card" style="padding:12px 18px"><div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><span style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Week</span><div class="week-bar" id="wbWeekBar"></div></div></div>
-        <div class="card" style="padding:12px 18px"><div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><span style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Day</span><div class="day-tabs" id="wbDayTabs"></div></div></div>
+        <div class="card" style="padding:12px 18px"><div class="day-strip" id="wbDayStrip"></div></div>
         <div class="card" style="padding-bottom:0">
           <div class="card-title metrics-toggle-row" onclick="toggleMetrics()" style="margin-bottom:0;padding-bottom:12px">Per-Line Summary <span class="metrics-arrow" id="wbMetricsArrow">▾</span></div>
           <div class="metrics-body" id="wbMetricsBody"><div style="overflow-x:auto;padding-bottom:4px" id="wbLineMetricsTable"></div></div>
@@ -615,9 +634,8 @@ function renderSequence(){
   document.getElementById('seqNoData').style.display=hasDemand?'none':'';
   document.getElementById('seqContent').style.display=hasDemand?'':'none';
   if(!hasDemand)return;
-  document.getElementById('weekBar').innerHTML=weeks.map(function(w){return'<button class="week-chip '+(w===CURRENT_WEEK?'active':'')+'" onclick="setWeek(\''+w+'\')">'+w+'</button>';}).join('');
+  renderDayStrip('seqDayStrip');renderWeekDropdowns();
   var days=getDays(CURRENT_WEEK);if(!CURRENT_DAY||days.indexOf(CURRENT_DAY)===-1)CURRENT_DAY=days[0];
-  document.getElementById('dayTabs').innerHTML=days.map(function(d){var dd=STATE.demand[CURRENT_WEEK]&&STATE.demand[CURRENT_WEEK][d],mode=(dd&&dd.mode)||'none',ds=(dd&&dd.date)?new Date(dd.date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}):'';return'<button class="day-tab mode-'+mode+' '+(d===CURRENT_DAY?'active':'')+'" onclick="setDay(\''+d+'\')">'+DAY_SHORT[d]+(ds?'<span class="dt-date">'+ds+'</span>':'')+'</button>';}).join('');
   var dayData=STATE.demand[CURRENT_WEEK]&&STATE.demand[CURRENT_WEEK][CURRENT_DAY],mb=document.getElementById('seqModeBadge');
   if(dayData){mb.style.display='';mb.textContent=dayData.mode;mb.className='mode-badge mode-'+dayData.mode;}else{mb.style.display='none';}
   document.getElementById('seqSubtitle').textContent=(CURRENT_WEEK&&CURRENT_DAY)?CURRENT_WEEK+' · '+CURRENT_DAY:'';
@@ -660,12 +678,12 @@ function renderWorkbench(){
   document.getElementById('wbNoData').style.display=hasDemand?'none':'';
   document.getElementById('wbContent').style.display=hasDemand?'':'none';
   if(!hasDemand)return;
-  document.getElementById('wbWeekBar').innerHTML=weeks.map(function(w){return'<button class="week-chip '+(w===CURRENT_WEEK?'active':'')+'" onclick="setWeek(\''+w+'\')">'+w+'</button>';}).join('');
+  renderDayStrip('wbDayStrip');renderWeekDropdowns();
   var days=getDays(CURRENT_WEEK);if(!CURRENT_DAY||days.indexOf(CURRENT_DAY)===-1)CURRENT_DAY=days[0];
-  document.getElementById('wbDayTabs').innerHTML=days.map(function(d){var dd=STATE.demand[CURRENT_WEEK]&&STATE.demand[CURRENT_WEEK][d],mode=(dd&&dd.mode)||'none',ds=(dd&&dd.date)?new Date(dd.date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}):'';return'<button class="day-tab mode-'+mode+' '+(d===CURRENT_DAY?'active':'')+'" onclick="setDay(\''+d+'\')">'+DAY_SHORT[d]+(ds?'<span class="dt-date">'+ds+'</span>':'')+'</button>';}).join('');
   var dayData=STATE.demand[CURRENT_WEEK]&&STATE.demand[CURRENT_WEEK][CURRENT_DAY],mb=document.getElementById('wbModeBadge');
   if(dayData){mb.style.display='';mb.textContent=dayData.mode;mb.className='mode-badge mode-'+dayData.mode;}else{mb.style.display='none';}
   document.getElementById('wbSubtitle').textContent=(CURRENT_WEEK&&CURRENT_DAY)?CURRENT_WEEK+' · '+CURRENT_DAY:'Same plan as Line Sequence';
+  var ppb=document.getElementById('publishPlanBtn');if(ppb)ppb.style.display=(CURRENT_USER&&(CURRENT_USER.isAdmin||CURRENT_USER.isPlanner))?'':'none';
   var ppb=document.getElementById('publishPlanBtn');if(ppb)ppb.style.display=(CURRENT_USER&&(CURRENT_USER.isAdmin||CURRENT_USER.isPlanner))?'':'none';
   var result=runSequencer();if(!result)return;
   var lineState=result.lineState,lines=result.lines,rules=result.rules;
@@ -806,7 +824,7 @@ window.onload=function(){
       if(foundWeek){CURRENT_WEEK=foundWeek;CURRENT_DAY=foundDay;}
       else{CURRENT_WEEK=weeks[0];var days=getDays(CURRENT_WEEK);CURRENT_DAY=days.indexOf(todayName)!==-1?todayName:(days[0]||null);}
     }
-    renderSequence();startPolling();
+    renderSequence();renderDayStrip('seqDayStrip');renderDayStrip('wbDayStrip');renderWeekDropdowns();startPolling();
   }).withFailureHandler(function(err){document.getElementById('seqNoDataSub').textContent='Error loading state: '+err.message;}).getState();
 
   var today=new Date(),plus2=new Date(today);plus2.setDate(plus2.getDate()+2);
@@ -822,6 +840,78 @@ function toggleLegend(){
   body.style.opacity=open?'0':'1';
   arrow.style.transform=open?'rotate(-90deg)':'';
 }
+
+// ── DAY STRIP ─────────────────────────────────────────────────────────────
+function renderDayStrip(containerId){
+  var el=document.getElementById(containerId);if(!el)return;
+  var weeks=getWeeks(),cards=[],seen={};
+  weeks.forEach(function(wk){
+    if(wk!==CURRENT_WEEK)return;
+    DAYS_ORDER.forEach(function(day){
+      var dd=STATE.demand[wk]&&STATE.demand[wk][day];
+      if(!dd)return;
+      var key=wk+'|'+day;
+      if(seen[key])return;seen[key]=true;
+      cards.push({wk:wk,day:day,date:dd.date||'',mode:dd.mode||'forecast'});
+    });
+  });
+  cards.sort(function(a,b){return a.date.localeCompare(b.date);});
+  el.innerHTML='';
+  cards.forEach(function(c){
+    var ds=c.date?new Date(c.date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}):'';
+    var isSelected=(c.wk===CURRENT_WEEK&&c.day===CURRENT_DAY);
+    var pub=STATE.publishedPlans&&STATE.publishedPlans[c.wk]&&STATE.publishedPlans[c.wk][c.day];
+    var div=document.createElement('div');
+    div.className='day-card mode-'+c.mode+(isSelected?' selected':'');
+    div.setAttribute('data-wk',c.wk);
+    div.setAttribute('data-day',c.day);
+    div.onclick=function(){setWeekDay(this.getAttribute('data-wk'),this.getAttribute('data-day'));};
+    var dayDiv=document.createElement('div');dayDiv.className='dc-day';dayDiv.textContent=DAY_SHORT[c.day]||c.day;
+    var dateDiv=document.createElement('div');dateDiv.className='dc-date';dateDiv.textContent=ds;
+    div.appendChild(dayDiv);div.appendChild(dateDiv);
+    if(pub){var dot=document.createElement('div');dot.className='dc-pub';div.appendChild(dot);}
+    el.appendChild(div);
+  });
+}
+
+function setWeekDay(wk,day){CURRENT_WEEK=wk;CURRENT_DAY=day;renderSequence();renderWorkbench();}
+
+function renderWeekDropdowns(){
+  var weeks=getWeeks();
+  ['seqWeekSel','wbWeekSel'].forEach(function(id){
+    var sel=document.getElementById(id);if(!sel)return;
+    sel.style.display=weeks.length?'':'none';
+    sel.innerHTML=weeks.map(function(w){return'<option value="'+w+'"'+(w===CURRENT_WEEK?' selected':'')+'>'+w+'</option>';}).join('');
+  });
+}
+
+// ── PUBLISH PLAN ──────────────────────────────────────────────────────────
+function publishPlan(){
+  var result=runSequencer();if(!result)return;
+  applyWorkbenchOverrides(result.lineState);
+  var snap={lineState:result.lineState,lines:result.lines,jobs:result.jobs,unplaced:result.unplaced,publishedBy:(CURRENT_USER&&CURRENT_USER.email)||'',publishedAt:new Date().toISOString()};
+  if(!STATE.publishedPlans)STATE.publishedPlans={};
+  if(!STATE.publishedPlans[CURRENT_WEEK])STATE.publishedPlans[CURRENT_WEEK]={};
+  STATE.publishedPlans[CURRENT_WEEK][CURRENT_DAY]=snap;
+  var btn=document.getElementById('publishPlanBtn');if(btn){btn.disabled=true;btn.textContent='Publishing...';}
+  google.script.run.withSuccessHandler(function(){
+    if(btn){btn.disabled=false;btn.textContent='Publish Plan';}
+    renderSequence();renderDayStrip('seqDayStrip');renderDayStrip('wbDayStrip');
+  }).withFailureHandler(function(err){
+    if(btn){btn.disabled=false;btn.textContent='Publish Plan';}
+  }).savePublishedPlan(CURRENT_WEEK,CURRENT_DAY,snap);
+}
+
+// ── TOGGLE LEGEND ─────────────────────────────────────────────────────────
+function toggleLegend(){
+  var body=document.getElementById('legendBody'),arrow=document.getElementById('legendArrow');
+  if(!body)return;
+  var open=body.style.maxHeight!=='0px';
+  body.style.maxHeight=open?'0px':'400px';
+  body.style.opacity=open?'0':'1';
+  arrow.style.transform=open?'rotate(-90deg)':'';
+}
+
 document.addEventListener('visibilitychange',function(){if(document.hidden&&_pollInterval){clearInterval(_pollInterval);_pollInterval=null;}else if(!document.hidden&&!_pollInterval)startPolling();});
 </script>
 </body>
