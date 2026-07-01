@@ -1,10 +1,14 @@
 <!--
   Sequins ✨ — Index.html
-  v0.3.8 — 2026-07-01
-  - Workbench light gray background
-  - Publish Plan button in Workbench (admin + planner)
-  - Line Sequence reads from published plan only
-  - Legend panel in sidebar-->
+  v0.4.5 — 2026-07-01
+  - Fix: publishPlan failure handler no longer stuck (removed Logger.log, proper reset)
+  - Add: Unpublish button in Workbench (admin + planner)
+  - Fix: removed duplicate publishPlan() and toggleLegend() functions
+  - KPIs moved to top of Line Sequence (below day strip)
+  - Demand Debug moved from Line Sequence to Workbench only
+  - runSequencer respects active:false in SKU library (filters CPGs)
+  - publishPlan shows confirmation modal when publishing from forecast
+-->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -145,10 +149,6 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--s
 .sku-row.overridden{border-left:2px solid var(--amber);}
 .legend-row{display:flex;align-items:center;gap:7px;padding:2px 4px;}
 .legend-desc{font-size:9px;color:var(--muted);line-height:1.3;font-family:var(--mono);}
-.main.wb-active{background:#e8f8f4;}
-.main.wb-active .page-title{color:#1a2e28;}.main.wb-active .page-sub{color:#3a5a50;}.main.wb-active .card-title{color:#3a5a50;}
-.legend-row{display:flex;align-items:center;gap:7px;padding:2px 4px;}
-.legend-desc{font-size:9px;color:var(--muted);line-height:1.3;font-family:var(--mono);}
 .main.wb-active{background:#e2f5ee;}
 .main.wb-active .page-title{color:#1a2e28;}
 .main.wb-active .page-sub{color:#3a5a50;}
@@ -205,10 +205,9 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--s
         <div class="legend-row"><div class="live-dot" style="width:7px;height:7px;flex-shrink:0;margin:0 1px"></div><span class="legend-desc">Live — polling every 8s</span></div>
       </div>
     </div>
-  
     <div style="flex:1"></div>
     <div class="nav-spacer"></div>
-      </nav>
+  </nav>
   <main class="main">
 
     <!-- LINE SEQUENCE -->
@@ -227,6 +226,14 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--s
       </div>
       <div id="seqContent" style="display:none">
         <div class="card" style="padding:12px 18px"><div class="day-strip" id="seqDayStrip"></div></div>
+        <div class="kpi-row" style="grid-template-columns:repeat(6,1fr)">
+          <div class="kpi"><div class="kpi-val teal" id="k-skus">—</div><div class="kpi-lbl">SKUs scheduled</div></div>
+          <div class="kpi"><div class="kpi-val" id="k-units">—</div><div class="kpi-lbl">Total units</div></div>
+          <div class="kpi"><div class="kpi-val" id="k-lines">—</div><div class="kpi-lbl">Active lines</div></div>
+          <div class="kpi"><div class="kpi-val green" id="k-placed">—</div><div class="kpi-lbl">SKUs placed</div></div>
+          <div class="kpi"><div class="kpi-val amber" id="k-unplaced">—</div><div class="kpi-lbl">Unplaced</div></div>
+          <div class="kpi"><div class="kpi-val red" id="k-noattrs">—</div><div class="kpi-lbl">Missing attributes</div></div>
+        </div>
         <div class="card" id="unplacedCard" style="display:none;border:2px solid var(--red);background:var(--red-dim)">
           <div class="card-title" style="font-size:13px;color:var(--red)">UNPLACED SKUs - These units are NOT in the plan</div>
           <div id="unplacedList" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px"></div>
@@ -241,22 +248,6 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--s
           <div id="noAttrsList" style="font-family:var(--mono);font-size:11px;color:var(--muted)"></div>
         </div>
         <div class="seq-grid" id="lineCards"></div>
-        <div class="card" id="unplacedCard" style="display:none">
-          <div class="card-title"><span style="color:var(--amber)">⚠ Unplaced SKUs</span></div>
-          <div id="unplacedList"></div>
-        </div>
-        <div class="card" id="demandDebugCard" style="display:none">
-          <div class="card-title metrics-toggle-row" onclick="toggleDemandDebug()">Demand Debug <span class="metrics-arrow" id="demandDebugArrow">▾</span></div>
-          <div class="metrics-body" id="demandDebugBody" style="padding-bottom:8px"></div>
-        </div>
-        <div class="kpi-row" style="grid-template-columns:repeat(6,1fr)">
-          <div class="kpi"><div class="kpi-val teal" id="k-skus">—</div><div class="kpi-lbl">SKUs scheduled</div></div>
-          <div class="kpi"><div class="kpi-val" id="k-units">—</div><div class="kpi-lbl">Total units</div></div>
-          <div class="kpi"><div class="kpi-val" id="k-lines">—</div><div class="kpi-lbl">Active lines</div></div>
-          <div class="kpi"><div class="kpi-val green" id="k-placed">—</div><div class="kpi-lbl">SKUs placed</div></div>
-          <div class="kpi"><div class="kpi-val amber" id="k-unplaced">—</div><div class="kpi-lbl">Unplaced</div></div>
-          <div class="kpi"><div class="kpi-val red" id="k-noattrs">—</div><div class="kpi-lbl">Missing attributes</div></div>
-        </div>
       </div>
     </div>
 
@@ -266,6 +257,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--s
         <div><div class="page-title">Workbench</div><div class="page-sub" id="wbSubtitle">Same plan as Line Sequence</div></div>
         <div class="btn-row">
           <span class="mode-badge mode-forecast" id="wbModeBadge" style="display:none"></span>
+          <button class="btn btn-ghost btn-sm" id="unpublishPlanBtn" style="display:none" onclick="unpublishPlan()">Unpublish</button>
           <button class="btn btn-green" id="publishPlanBtn" style="display:none" onclick="publishPlan()">🚀 Publish Plan</button>
         </div>
       </div>
@@ -286,6 +278,22 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--s
           <div class="metrics-body" id="wbMetricsBody"><div style="overflow-x:auto;padding-bottom:4px" id="wbLineMetricsTable"></div></div>
         </div>
         <div class="seq-grid" id="wbLineCards"></div>
+        <div class="card" id="demandDebugCard" style="display:none">
+          <div class="card-title metrics-toggle-row" onclick="toggleDemandDebug()">Demand Debug <span class="metrics-arrow" id="demandDebugArrow">▾</span></div>
+          <div class="metrics-body" id="demandDebugBody" style="padding-bottom:8px"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- FORECAST PUBLISH WARNING MODAL -->
+    <div class="modal-overlay" id="forecastPublishModal">
+      <div class="modal-box" style="width:420px;text-align:left">
+        <div class="modal-title">⚠ Publishing from Forecast</div>
+        <div style="font-family:var(--mono);font-size:11px;color:var(--amber);background:var(--amber-dim);border:1px solid rgba(245,158,11,.3);border-radius:6px;padding:10px 12px;line-height:1.6">This plan is based on <strong>forecast demand</strong>, not confirmed actuals. The floor will see this plan.<br><br>Are you sure you want to publish?</div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px">
+          <button class="btn btn-ghost" onclick="document.getElementById('forecastPublishModal').classList.remove('active')">Cancel</button>
+          <button class="btn btn-amber" onclick="confirmPublishPlan()" style="background:var(--amber);color:#000">Publish anyway</button>
+        </div>
       </div>
     </div>
 
@@ -429,14 +437,7 @@ var DEFAULT_RULES={wrapLine:'LINE-3',sandwichLine:'LINE-2',noUsdaLines:['LINE-6'
 function getRules(){return STATE.sequencingRules||DEFAULT_RULES;}
 var SLOT_CAP=14,TARGET_MIN=510;
 
-// ── METRICS TOGGLE ─────────────────────────────────────────────────────────
-function toggleMetrics(){
-  _metricsCollapsed=!_metricsCollapsed;
-  ['seqMetricsBody','wbMetricsBody'].forEach(function(id){var el=document.getElementById(id);if(el)el.classList.toggle('collapsed',_metricsCollapsed);});
-  ['seqMetricsArrow','wbMetricsArrow'].forEach(function(id){var el=document.getElementById(id);if(el)el.classList.toggle('collapsed',_metricsCollapsed);});
-}
-
-// ── HELPERS ────────────────────────────────────────────────────────────────
+function toggleMetrics(){_metricsCollapsed=!_metricsCollapsed;['seqMetricsBody','wbMetricsBody'].forEach(function(id){var el=document.getElementById(id);if(el)el.classList.toggle('collapsed',_metricsCollapsed);});['seqMetricsArrow','wbMetricsArrow'].forEach(function(id){var el=document.getElementById(id);if(el)el.classList.toggle('collapsed',_metricsCollapsed);});}
 function parseAllergens(s){var lo=(s||'').toLowerCase();return{milk:lo.indexOf('milk')!==-1,soy:lo.indexOf('soy')!==-1,wheat:lo.indexOf('wheat')!==-1,egg:lo.indexOf('egg')!==-1,treeNuts:lo.indexOf('tree nut')!==-1,sesame:lo.indexOf('sesame')!==-1};}
 function allergenScore(a){return(a.milk?1:0)+(a.soy?1:0)+(a.wheat?1:0)+(a.egg?1:0)+(a.treeNuts?1:0)+(a.sesame?1:0);}
 function categoryToPool(cat){var m={'Salad':'salad','USDA Salad':'salad','Bowl':'bowl','Breakfast':'bowl','Sandwich':'sandwich','Retail Sandwich':'sandwich','Wrap':'wrap','USDA Handheld':'wrap','Handheld':'wrap','Snack':'flex','Meals':'flex','Protein':'flex'};return m[cat]||'flex';}
@@ -445,7 +446,6 @@ function getDays(week){if(!STATE.demand[week])return[];return DAYS_ORDER.filter(
 function fmtUnits(n){return Number(n).toLocaleString();}
 function fmtClock(totalMin){var m=Math.round(totalMin),do_=Math.floor(m/1440);m=((m%1440)+1440)%1440;var hh=Math.floor(m/60),mm=m%60,ap=hh>=12?'PM':'AM',h12=hh%12===0?12:hh%12;return h12+':'+String(mm).padStart(2,'0')+' '+ap+(do_>0?' +'+do_:'');}
 
-// ── SEQUENCER ──────────────────────────────────────────────────────────────
 function runSequencer(){
   if(!CURRENT_WEEK||!CURRENT_DAY)return null;
   var dayData=STATE.demand[CURRENT_WEEK]&&STATE.demand[CURRENT_WEEK][CURRENT_DAY];
@@ -453,7 +453,10 @@ function runSequencer(){
   var skus=dayData.skus||{},lib=STATE.skuLibrary,rules=getRules();
   var lines=(STATE.lineConfig||DEFAULT_LINE_CONFIG).filter(function(l){var d=DAY_SHORT[CURRENT_DAY];return l.days&&l.days[d];});
   var hasNightLines=lines.some(function(l){return l.type==='night';});
-  var jobs=Object.keys(skus).map(function(skuName){
+  var jobs=Object.keys(skus).filter(function(skuName){
+    var key=skuName.toUpperCase(),meta=lib[key];
+    return !!meta&&meta.active!==false;
+  }).map(function(skuName){
     var qty=skus[skuName],key=skuName.toUpperCase(),meta=lib[key]||{};
     var upm=parseFloat(meta.upm)||15,pkg=meta.packageType||'',al=parseAllergens(meta.allergens||'');
     var pool=meta.category?categoryToPool(meta.category):'flex';
@@ -480,7 +483,6 @@ function runSequencer(){
   return{lineState:lineState,lines:lines,jobs:jobs,unplaced:jobs.filter(function(j){return!placed[j.sku];}),rules:rules};
 }
 
-// ── LINE METRICS ───────────────────────────────────────────────────────────
 function renderLineMetricsTable(containerId,lineState,lines){
   var el=document.getElementById(containerId);if(!el)return;
   var rate=getRules().hourlyRate||23.75;
@@ -500,7 +502,6 @@ function renderLineMetricsTable(containerId,lineState,lines){
   el.innerHTML=html;
 }
 
-// ── WORKBENCH OVERRIDES ────────────────────────────────────────────────────
 function applyWorkbenchOverrides(lineState){
   var overrides=(STATE.overrides[CURRENT_WEEK]&&STATE.overrides[CURRENT_WEEK][CURRENT_DAY])||{},touched={};
   Object.keys(overrides).forEach(function(skuName){
@@ -514,7 +515,6 @@ function applyWorkbenchOverrides(lineState){
   Object.keys(touched).forEach(function(lid){var ls=lineState[lid],rm=0;ls.slots.forEach(function(job,idx){var co=idx>0?(rules.changeoverMin||0):0;job.changeoverMin=co;rm+=co;job.startClockMin=ls.startMin+rm;rm+=job.runtimeMin;job.endClockMin=ls.startMin+rm;});ls.totalMin=rm;});
 }
 
-// ── SHARED LINE CARD BUILDER ───────────────────────────────────────────────
 function buildLineCards(lines,lineState,draggable,rules){
   return lines.map(function(line){
     var ls=lineState[line.id],slots=(ls&&ls.slots)||[];
@@ -524,7 +524,9 @@ function buildLineCards(lines,lineState,draggable,rules){
       var tag=job.isUSDA?'<span class="sku-tag tag-usda">USDA</span>':job.pool==='wrap'?'<span class="sku-tag tag-wrap">wrap</span>':job.pool==='sandwich'?'<span class="sku-tag tag-sand">sand</span>':'';
       var preTag=job.isPreProcessed?'<span class="preproc-badge" title="Pre-processed">P</span>':'';
       var ovTag=job.overridden?'<span class="sku-tag" style="background:var(--amber-dim);color:var(--amber)" title="Moved by '+(job.overrideMovedBy||'')+(job.overrideNote?' — '+job.overrideNote:'')+'">moved</span>':'';
-      var isfall=draggable&&rules&&((job.pool==='wrap'&&line.id!==rules.wrapLine)||(job.pool==='sandwich'&&line.id!==rules.sandwichLine)||(job.pool==='night'&&line.type!=='night'));var ftag=isfall?'<span class="sku-tag" style="background:rgba(250,204,21,.15);color:#facc15">&#9889;</span>':'';var rc=job.overridden?'sku-row overridden':'sku-row';
+      var isfall=draggable&&rules&&((job.pool==='wrap'&&line.id!==rules.wrapLine)||(job.pool==='sandwich'&&line.id!==rules.sandwichLine)||(job.pool==='night'&&line.type!=='night'));
+      var ftag=isfall?'<span class="sku-tag" style="background:rgba(250,204,21,.15);color:#facc15">&#9889;</span>':'';
+      var rc=job.overridden?'sku-row overridden':'sku-row';
       var tl='<div class="sku-time"><strong>'+fmtClock(job.startClockMin)+'</strong> → <strong>'+fmtClock(job.endClockMin)+'</strong></div>';
       if(draggable){var ss=job.sku.replace(/'/g,"\\'");return'<div class="'+rc+'" draggable="true" ondragstart="wbDragStart(event,\''+ss+'\',\''+line.id+'\')" ondragend="wbDragEnd(event)"><div class="sku-row-top"><span class="sku-seq">'+(i+1)+'</span><span class="sku-name" title="'+job.sku+'">'+job.sku+'</span>'+preTag+tag+ovTag+ftag+'<span class="sku-units">'+fmtUnits(job.qty)+'</span></div>'+tl+'</div>';}
       return'<div class="'+rc+'"><div class="sku-row-top"><span class="sku-seq">'+(i+1)+'</span><span class="sku-name" title="'+job.sku+'">'+job.sku+'</span>'+preTag+tag+'<span class="sku-units">'+fmtUnits(job.qty)+'</span></div>'+tl+'</div>';
@@ -536,7 +538,6 @@ function buildLineCards(lines,lineState,draggable,rules){
   }).join('');
 }
 
-// ── VIOLATION CHECK ────────────────────────────────────────────────────────
 function checkLineViolations(job,lineId,lineState,rules,lcById){
   var v=[],ls=lineState[lineId];if(!ls)return['Line not found'];var cfg=lcById[lineId];
   if(job.isUSDA&&rules.noUsdaLines.indexOf(lineId)!==-1)v.push('USDA SKU not allowed on '+lineId);
@@ -550,7 +551,6 @@ function checkLineViolations(job,lineId,lineState,rules,lcById){
   return v;
 }
 
-// ── DRAG + DROP ────────────────────────────────────────────────────────────
 function wbDragStart(e,sku,fromLine){_wbDragSku=sku;_wbDragFromLine=fromLine;e.target.classList.add('dragging');e.dataTransfer.effectAllowed='move';}
 function wbDragEnd(e){e.target.classList.remove('dragging');}
 function wbDragOver(e){e.preventDefault();e.currentTarget.classList.add('drag-over');}
@@ -585,62 +585,29 @@ function openMoveModal(move){
 function closeMoveModal(){document.getElementById('moveModal').classList.remove('active');_pendingMove=null;}
 function confirmMove(){if(!_pendingMove)return;var note=document.getElementById('moveNoteInput').value.trim(),m=_pendingMove;closeMoveModal();commitMove(m.sku,m.fromLine,m.toLine,m.violations,note);}
 
-// ── DEMAND DEBUG ──────────────────────────────────────────────────────────
 var _debugCollapsed=false;
-function toggleDemandDebug(){
-  _debugCollapsed=!_debugCollapsed;
-  var b=document.getElementById('demandDebugBody'),a=document.getElementById('demandDebugArrow');
-  if(b)b.classList.toggle('collapsed',_debugCollapsed);
-  if(a)a.classList.toggle('collapsed',_debugCollapsed);
-}
+function toggleDemandDebug(){_debugCollapsed=!_debugCollapsed;var b=document.getElementById('demandDebugBody'),a=document.getElementById('demandDebugArrow');if(b)b.classList.toggle('collapsed',_debugCollapsed);if(a)a.classList.toggle('collapsed',_debugCollapsed);}
 function renderDemandDebug(storedSkus,sequencerJobs){
   var card=document.getElementById('demandDebugCard'),el=document.getElementById('demandDebugBody');
   if(!card||!el)return;
   if(!CURRENT_USER||!CURRENT_USER.isAdmin){card.style.display='none';return;}
   card.style.display='';
-  // Build sequencer map
-  var seqMap={};
-  sequencerJobs.forEach(function(j){seqMap[j.sku]=j.qty;});
-  // Totals
+  var seqMap={};sequencerJobs.forEach(function(j){seqMap[j.sku]=j.qty;});
   var storedTotal=Object.keys(storedSkus).reduce(function(s,k){return s+(storedSkus[k]||0);},0);
   var seqTotal=sequencerJobs.reduce(function(s,j){return s+j.qty;},0);
-  // Find all SKUs across both sets
-  var allSkus={};
-  Object.keys(storedSkus).forEach(function(k){allSkus[k]=true;});
-  sequencerJobs.forEach(function(j){allSkus[j.sku]=true;});
-  // Diffs: SKUs present in one side only, or with different rounded qtys
-  var diffs=Object.keys(allSkus).filter(function(sku){
-    return Math.round(storedSkus[sku]||0)!==Math.round(seqMap[sku]||0);
-  });
-  var delta=seqTotal-Math.round(storedTotal);
-  var hasDiff=diffs.length>0||delta!==0;
+  var allSkus={};Object.keys(storedSkus).forEach(function(k){allSkus[k]=true;});sequencerJobs.forEach(function(j){allSkus[j.sku]=true;});
+  var diffs=Object.keys(allSkus).filter(function(sku){return Math.round(storedSkus[sku]||0)!==Math.round(seqMap[sku]||0);});
+  var delta=seqTotal-Math.round(storedTotal),hasDiff=diffs.length>0||delta!==0;
   var html='<div style="display:flex;gap:24px;align-items:center;margin-bottom:10px;font-family:var(--mono);font-size:12px;flex-wrap:wrap">';
   html+='<span>Stored demand: <strong style="color:var(--amber)">'+fmtUnits(Math.round(storedTotal))+'</strong> ('+Object.keys(storedSkus).length+' SKUs)</span>';
   html+='<span>Sequencer input: <strong style="color:var(--teal)">'+fmtUnits(seqTotal)+'</strong> ('+sequencerJobs.length+' jobs)</span>';
-  html+='<span>Δ: <strong style="color:'+(hasDiff?'var(--red)':'var(--green)');
-  html+='">'+( delta>=0?'+':'')+delta+'</strong></span>';
-  html+='</div>';
-  if(diffs.length>0){
-    html+='<div style="font-family:var(--mono);font-size:11px;color:var(--red);margin-bottom:8px">⚠ '+diffs.length+' SKU(s) with mismatched quantities:</div>';
-    html+='<div style="overflow-x:auto"><table class="data-table"><thead><tr><th>SKU</th><th style="text-align:right">Stored</th><th style="text-align:right">Sequencer</th><th style="text-align:right">Δ</th></tr></thead><tbody>';
-    diffs.sort().forEach(function(sku){
-      var s=Math.round(storedSkus[sku]||0),q=seqMap[sku]||0,d=q-s;
-      html+='<tr><td style="font-family:var(--mono)">'+sku+'</td>';
-      html+='<td style="text-align:right">'+(s>0?fmtUnits(s):'<span style="color:var(--red)">—</span>')+'</td>';
-      html+='<td style="text-align:right">'+(q>0?fmtUnits(q):'<span style="color:var(--red)">—</span>')+'</td>';
-      html+='<td style="text-align:right;color:'+(d>0?'var(--amber)':'var(--muted)');
-      html+='">'+(d>0?'+':'')+d+'</td></tr>';
-    });
-    html+='</tbody></table></div>';
-  }else if(delta!==0){
-    html+='<div style="font-family:var(--mono);font-size:11px;color:var(--amber)">⚠ No per-SKU diffs but totals differ by '+delta+' — likely a rounding accumulation issue (sum-then-round vs round-then-sum).</div>';
-  }else{
-    html+='<div style="font-family:var(--mono);font-size:11px;color:var(--green)">✓ Stored demand and sequencer input match exactly for this day.</div>';
-  }
+  html+='<span>Δ: <strong style="color:'+(hasDiff?'var(--red)':'var(--green)')+'">'+( delta>=0?'+':'')+delta+'</strong></span></div>';
+  if(diffs.length>0){html+='<div style="font-family:var(--mono);font-size:11px;color:var(--red);margin-bottom:8px">⚠ '+diffs.length+' SKU(s) with mismatched quantities:</div><div style="overflow-x:auto"><table class="data-table"><thead><tr><th>SKU</th><th style="text-align:right">Stored</th><th style="text-align:right">Sequencer</th><th style="text-align:right">Δ</th></tr></thead><tbody>';diffs.sort().forEach(function(sku){var s=Math.round(storedSkus[sku]||0),q=seqMap[sku]||0,d=q-s;html+='<tr><td>'+sku+'</td><td style="text-align:right">'+(s>0?fmtUnits(s):'<span style="color:var(--red)">—</span>')+'</td><td style="text-align:right">'+(q>0?fmtUnits(q):'<span style="color:var(--red)">—</span>')+'</td><td style="text-align:right;color:'+(d>0?'var(--amber)':'var(--muted)')+'">'+(d>0?'+':'')+d+'</td></tr>';});html+='</tbody></table></div>';}
+  else if(delta!==0){html+='<div style="font-family:var(--mono);font-size:11px;color:var(--amber)">⚠ No per-SKU diffs but totals differ by '+delta+'.</div>';}
+  else{html+='<div style="font-family:var(--mono);font-size:11px;color:var(--green)">✓ Stored demand and sequencer input match exactly.</div>';}
   el.innerHTML=html;
 }
 
-// ── RENDER: LINE SEQUENCE ──────────────────────────────────────────────────
 function renderSequence(){
   var weeks=getWeeks(),hasDemand=weeks.length>0;
   document.getElementById('seqNoData').style.display=hasDemand?'none':'';
@@ -654,7 +621,7 @@ function renderSequence(){
   var pub=STATE.publishedPlans&&STATE.publishedPlans[CURRENT_WEEK]&&STATE.publishedPlans[CURRENT_WEEK][CURRENT_DAY];
   var npc=document.getElementById('seqNoPlan');
   if(!pub){
-    if(!npc){var np=document.createElement('div');np.id='seqNoPlan';np.className='card';np.style.borderColor='rgba(245,158,11,.25)';np.innerHTML='<div style=text-align:center;padding:32px><span style=font-family:var(--mono);font-size:12px;color:var(--muted)>No published plan for this day. Open Workbench and click Publish Plan.</span></div>';document.getElementById('lineCards').parentNode.insertBefore(np,document.getElementById('lineCards'));}else{npc.style.display='';}
+    if(!npc){var np=document.createElement('div');np.id='seqNoPlan';np.className='card';np.style.borderColor='rgba(245,158,11,.25)';np.innerHTML='<div style="text-align:center;padding:32px"><span style="font-family:var(--mono);font-size:12px;color:var(--muted)">No published plan for this day. Open Workbench and click Publish Plan.</span></div>';document.getElementById('lineCards').parentNode.insertBefore(np,document.getElementById('lineCards'));}else{npc.style.display='';}
     document.getElementById('lineCards').innerHTML='';
     document.getElementById('lineMetricsTable').innerHTML='';
     document.getElementById('unplacedCard').style.display='none';
@@ -678,19 +645,11 @@ function renderSequence(){
   document.getElementById('lineCards').innerHTML=buildLineCards(lines,lineState,false,null);
   renderLineMetricsTable('lineMetricsTable',lineState,lines);
   var uc=document.getElementById('unplacedCard');
-  if(unplaced.length>0){
-    uc.style.display='';
-    var tu2=unplaced.reduce(function(s,j){return s+j.qty;},0);
-    var ul=document.getElementById('unplacedList');ul.innerHTML='';
-    unplaced.forEach(function(j){var d=document.createElement('div');d.className='sku-row';d.style.flexDirection='column';d.style.gap='2px';var top=document.createElement('div');top.style.display='flex';top.style.gap='8px';var nm=document.createElement('span');nm.className='sku-name';nm.textContent=j.sku;var qty=document.createElement('span');qty.className='sku-units';qty.style.color='var(--red)';qty.textContent=fmtUnits(j.qty);var pool=document.createElement('span');pool.style.cssText='font-size:10px;color:var(--muted)';pool.textContent=j.pool;top.appendChild(nm);top.appendChild(qty);top.appendChild(pool);d.appendChild(top);if(j.unplacedReason){var r=document.createElement('span');r.style.cssText='font-size:10px;color:var(--amber);padding-left:4px';r.textContent=j.unplacedReason;d.appendChild(r);}ul.appendChild(d);});
-    document.getElementById('unplacedUnits').textContent='Total unplaced: '+fmtUnits(tu2)+' units across '+unplaced.length+' SKUs';
-  }else{uc.style.display='none';}
-  if(CURRENT_USER&&CURRENT_USER.isAdmin){renderDemandDebug(dayData?dayData.skus||{}:{},jobs);}
+  if(unplaced.length>0){uc.style.display='';var tu2=unplaced.reduce(function(s,j){return s+j.qty;},0);var ul=document.getElementById('unplacedList');ul.innerHTML='';unplaced.forEach(function(j){var d=document.createElement('div');d.className='sku-row';d.style.flexDirection='column';d.style.gap='2px';var top=document.createElement('div');top.style.display='flex';top.style.gap='8px';var nm=document.createElement('span');nm.className='sku-name';nm.textContent=j.sku;var qty=document.createElement('span');qty.className='sku-units';qty.style.color='var(--red)';qty.textContent=fmtUnits(j.qty);var pool=document.createElement('span');pool.style.cssText='font-size:10px;color:var(--muted)';pool.textContent=j.pool;top.appendChild(nm);top.appendChild(qty);top.appendChild(pool);d.appendChild(top);if(j.unplacedReason){var r=document.createElement('span');r.style.cssText='font-size:10px;color:var(--amber);padding-left:4px';r.textContent=j.unplacedReason;d.appendChild(r);}ul.appendChild(d);});document.getElementById('unplacedUnits').textContent='Total unplaced: '+fmtUnits(tu2)+' units across '+unplaced.length+' SKUs';}else{uc.style.display='none';}
 }
 function setWeek(w){CURRENT_WEEK=w;CURRENT_DAY=getDays(w)[0]||null;renderSequence();renderWorkbench();}
 function setDay(d){CURRENT_DAY=d;renderSequence();renderWorkbench();}
 
-// ── RENDER: WORKBENCH ──────────────────────────────────────────────────────
 function renderWorkbench(){
   var weeks=getWeeks(),hasDemand=weeks.length>0;
   document.getElementById('wbNoData').style.display=hasDemand?'none':'';
@@ -701,8 +660,10 @@ function renderWorkbench(){
   var dayData=STATE.demand[CURRENT_WEEK]&&STATE.demand[CURRENT_WEEK][CURRENT_DAY],mb=document.getElementById('wbModeBadge');
   if(dayData){mb.style.display='';mb.textContent=dayData.mode;mb.className='mode-badge mode-'+dayData.mode;}else{mb.style.display='none';}
   document.getElementById('wbSubtitle').textContent=(CURRENT_WEEK&&CURRENT_DAY)?CURRENT_WEEK+' · '+CURRENT_DAY:'Same plan as Line Sequence';
-  var ppb=document.getElementById('publishPlanBtn');if(ppb)ppb.style.display=(CURRENT_USER&&(CURRENT_USER.isAdmin||CURRENT_USER.isPlanner))?'':'none';
-  
+  var canAct=CURRENT_USER&&(CURRENT_USER.isAdmin||CURRENT_USER.isPlanner);
+  var hasPub=!!(STATE.publishedPlans&&STATE.publishedPlans[CURRENT_WEEK]&&STATE.publishedPlans[CURRENT_WEEK][CURRENT_DAY]);
+  var ppb=document.getElementById('publishPlanBtn');if(ppb)ppb.style.display=canAct?'':'none';
+  var upb=document.getElementById('unpublishPlanBtn');if(upb)upb.style.display=(canAct&&hasPub)?'':'none';
   var result=runSequencer();if(!result)return;
   var lineState=result.lineState,lines=result.lines,rules=result.rules;
   applyWorkbenchOverrides(lineState);
@@ -710,17 +671,11 @@ function renderWorkbench(){
   document.getElementById('wbLineCards').innerHTML=buildLineCards(lines,lineState,true,rules);
   renderLineMetricsTable('wbLineMetricsTable',lineState,lines);
   var wbUc=document.getElementById('wbUnplacedCard');
-  if(result.unplaced&&result.unplaced.length>0){
-    wbUc.style.display='';
-    var wbTu=result.unplaced.reduce(function(s,j){return s+j.qty;},0);
-    var wbUl=document.getElementById('wbUnplacedList');wbUl.innerHTML='';
-    result.unplaced.forEach(function(j){var d=document.createElement('div');d.className='sku-row';d.style.flexDirection='column';d.style.gap='2px';var top=document.createElement('div');top.style.display='flex';top.style.gap='8px';var nm=document.createElement('span');nm.className='sku-name';nm.textContent=j.sku;var qty=document.createElement('span');qty.className='sku-units';qty.style.color='var(--red)';qty.textContent=fmtUnits(j.qty);var pool=document.createElement('span');pool.style.cssText='font-size:10px;color:var(--muted)';pool.textContent=j.pool;top.appendChild(nm);top.appendChild(qty);top.appendChild(pool);d.appendChild(top);if(j.unplacedReason){var r=document.createElement('span');r.style.cssText='font-size:10px;color:var(--amber);padding-left:4px';r.textContent=j.unplacedReason;d.appendChild(r);}wbUl.appendChild(d);});
-    document.getElementById('wbUnplacedUnits').textContent='Total unplaced: '+fmtUnits(wbTu)+' units across '+result.unplaced.length+' SKUs';
-  }else if(wbUc){wbUc.style.display='none';}
+  if(result.unplaced&&result.unplaced.length>0){wbUc.style.display='';var wbTu=result.unplaced.reduce(function(s,j){return s+j.qty;},0);var wbUl=document.getElementById('wbUnplacedList');wbUl.innerHTML='';result.unplaced.forEach(function(j){var d=document.createElement('div');d.className='sku-row';d.style.flexDirection='column';d.style.gap='2px';var top=document.createElement('div');top.style.display='flex';top.style.gap='8px';var nm=document.createElement('span');nm.className='sku-name';nm.textContent=j.sku;var qty=document.createElement('span');qty.className='sku-units';qty.style.color='var(--red)';qty.textContent=fmtUnits(j.qty);var pool=document.createElement('span');pool.style.cssText='font-size:10px;color:var(--muted)';pool.textContent=j.pool;top.appendChild(nm);top.appendChild(qty);top.appendChild(pool);d.appendChild(top);if(j.unplacedReason){var r=document.createElement('span');r.style.cssText='font-size:10px;color:var(--amber);padding-left:4px';r.textContent=j.unplacedReason;d.appendChild(r);}wbUl.appendChild(d);});document.getElementById('wbUnplacedUnits').textContent='Total unplaced: '+fmtUnits(wbTu)+' units across '+result.unplaced.length+' SKUs';}else if(wbUc){wbUc.style.display='none';}
+  if(CURRENT_USER&&CURRENT_USER.isAdmin){renderDemandDebug(dayData?dayData.skus||{}:{},jobs);}
   window._wbLastResult={lineState:lineState,lines:lines,rules:rules,lineConfigById:lcById};
 }
 
-// ── DEMAND ─────────────────────────────────────────────────────────────────
 function renderLoadedDemand(){var weeks=getWeeks(),el=document.getElementById('loadedDemandTable');if(!weeks.length){el.innerHTML='<div style="font-family:var(--mono);font-size:11px;color:var(--muted)">No demand loaded.</div>';return;}var html='<table class="data-table"><thead><tr><th>Week</th><th>Day</th><th>Date</th><th>Mode</th><th style="text-align:right">SKUs</th><th style="text-align:right">Total Units</th><th>Published by</th></tr></thead><tbody>';weeks.forEach(function(wk){getDays(wk).forEach(function(day){var dd=STATE.demand[wk][day],tot=Object.keys(dd.skus||{}).reduce(function(s,k){return s+dd.skus[k];},0),date=dd.date?new Date(dd.date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'—';html+='<tr><td>'+wk+'</td><td>'+day+'</td><td>'+date+'</td><td><span class="mode-badge mode-'+dd.mode+'">'+dd.mode+'</span></td><td style="text-align:right">'+Object.keys(dd.skus||{}).length+'</td><td style="text-align:right">'+fmtUnits(Math.round(tot))+'</td><td style="color:var(--muted)">'+(dd.publishedBy||'—')+'</td></tr>';});});html+='</tbody></table>';el.innerHTML=html;}
 function loadForecastWeeks(){google.script.run.withSuccessHandler(function(weeks){var sel=document.getElementById('forecastWeekSel');sel.innerHTML=weeks.length?weeks.map(function(w){return'<option value="'+w.label+'">'+w.label+'</option>';}).join(''):'<option value="">— no weeks found —</option>';}).withFailureHandler(function(){document.getElementById('forecastWeekSel').innerHTML='<option value="">— error —</option>';}).fetchForecastWeeks();}
 function fetchForecastPreview(){var weekLabel=document.getElementById('forecastWeekSel').value;if(!weekLabel)return;var btn=document.getElementById('fetchFcBtn');btn.disabled=true;btn.innerHTML='<span class="spinner"></span>Fetching…';document.getElementById('fcPreview').innerHTML='';document.getElementById('fcPublishRow').style.display='none';google.script.run.withSuccessHandler(function(data){btn.disabled=false;btn.textContent='Fetch week';_pendingForecast=data;renderForecastPreview(data);document.getElementById('fcPublishRow').style.display='';document.getElementById('fcStatus').innerHTML='';}).withFailureHandler(function(err){btn.disabled=false;btn.textContent='Fetch week';document.getElementById('fcStatus').innerHTML='<div class="status status-err">'+err.message+'</div>';}).fetchForecastWeekData(weekLabel);}
@@ -731,40 +686,15 @@ function fetchActualPreview(){var start=document.getElementById('actualStart').v
 function renderActualPreview(data){var skuData=data.skuData,byDate=data.byDate,skuSet={};Object.keys(skuData).forEach(function(k){Object.keys(skuData[k]).forEach(function(s){skuSet[s]=true;});});var allSkus=Object.keys(skuSet).sort();var html='<div class="preview-wrap"><table class="preview-table"><thead><tr><th>Day</th><th>Date</th><th style="text-align:right">SKUs</th><th style="text-align:right">Total Units</th></tr></thead><tbody>';Object.keys(byDate).sort().forEach(function(date){var info=byDate[date],dayD=skuData[info.day+'|'+date]||{},tot=Object.keys(dayD).reduce(function(s,k){return s+dayD[k];},0);html+='<tr><td>'+info.day+'</td><td>'+new Date(date+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})+'</td><td style="text-align:right">'+Object.keys(dayD).length+'</td><td style="text-align:right">'+fmtUnits(Math.round(tot))+'</td></tr>';});var grand=Object.keys(skuData).reduce(function(s,k){return s+Object.keys(skuData[k]).reduce(function(s2,k2){return s2+skuData[k][k2];},0);},0);html+='<tr class="total-row"><td colspan="2">Total</td><td style="text-align:right">'+allSkus.length+' SKUs</td><td style="text-align:right">'+fmtUnits(grand)+'</td></tr></tbody></table></div><div style="font-size:10px;font-family:var(--mono);color:var(--muted);margin-top:8px">'+Object.keys(byDate).length+' days · <strong style="color:var(--green)">actuals</strong></div>';document.getElementById('actualPreview').innerHTML=html;}
 function publishActuals(){if(!_pendingActuals)return;var btn=document.querySelector('#actualPublishRow button');btn.disabled=true;btn.innerHTML='<span class="spinner"></span>Publishing…';var skuData=_pendingActuals.skuData,byDate=_pendingActuals.byDate,entries=[];Object.keys(byDate).forEach(function(date){var info=byDate[date],skus=skuData[info.day+'|'+date]||{};if(!Object.keys(skus).length)return;var d=new Date(date+'T12:00:00'),jan1=new Date(d.getFullYear(),0,1),wkNum=Math.ceil((((d-jan1)/86400000)+jan1.getDay()+1)/7);entries.push({weekLabel:'Wk '+wkNum+' · '+d.getFullYear(),day:info.day,date:date,skus:skus});});google.script.run.withSuccessHandler(function(result){btn.disabled=false;btn.innerHTML='🚀 Publish Actuals';entries.forEach(function(entry){if(!STATE.demand[entry.weekLabel])STATE.demand[entry.weekLabel]={};STATE.demand[entry.weekLabel][entry.day]={skus:entry.skus,mode:'actual',date:entry.date,publishedBy:(CURRENT_USER&&CURRENT_USER.email)||'',publishedAt:new Date().toISOString()};});if(!CURRENT_WEEK&&entries.length)CURRENT_WEEK=entries[0].weekLabel;document.getElementById('actualPreview').innerHTML='<div class="status status-ok">✓ Published '+result.daysLoaded+' days of actuals</div>';document.getElementById('actualPublishRow').style.display='none';_pendingActuals=null;renderLoadedDemand();renderSequence();}).withFailureHandler(function(err){btn.disabled=false;btn.innerHTML='🚀 Publish Actuals';document.getElementById('actualStatus').innerHTML='<div class="status status-err">'+err.message+'</div>';}).publishActualDays(entries);}
 
-// ── SKU LIBRARY ────────────────────────────────────────────────────────────
 function renderSkuLibrary(){filterSkuTable();}
-function addSkuManually(){
-  var input=document.getElementById('newSkuInput');
-  var raw=(input.value||'').trim().toUpperCase().replace(/[^A-Z0-9_]/g,'');
-  if(!raw)return;
-  var el=document.getElementById('skuLibStatus');
-  if(STATE.skuLibrary[raw]){
-    document.getElementById('skuSearch').value=raw;
-    filterSkuTable();
-    input.value='';
-    if(el)el.innerHTML='<div class="status status-warn">'+raw+' already in library — highlighted below</div>';
-    return;
-  }
-  STATE.skuLibrary[raw]={active:true,category:'',packageType:'',upm:'',allergens:'',capper:false,nightShift:false,preProcessed:false};
-  input.value='';
-  document.getElementById('skuSearch').value=raw;
-  filterSkuTable();
-  if(el)el.innerHTML='<div class="status status-info">Added '+raw+' — fill in attributes and save</div>';
-}
-function filterSkuTable(){
-  var search=(document.getElementById('skuSearch').value||'').toLowerCase(),showInactive=document.getElementById('showInactiveChk').checked,lib=STATE.skuLibrary,allKeys=Object.keys(lib);
-  updateSkuCounts();
-  var skus=allKeys.filter(function(k){if(!showInactive&&lib[k].active===false)return false;return k.toLowerCase().indexOf(search)!==-1;}).sort();
-  document.getElementById('skuCount').textContent=skus.length+' SKUs';
-  document.getElementById('skuTableBody').innerHTML=skus.map(function(key){var s=lib[key];function chk(f){return'<input type="checkbox" '+(s[f]?'checked':'')+' style="accent-color:var(--teal)" onchange="updateSkuField(\''+key+'\',\''+f+'\',this.checked)">';}return'<tr><td><span class="sku-active-dot '+(s.active!==false?'dot-active':'dot-inactive')+'"></span>'+key+'</td><td><input class="inline-input" value="'+(s.category||'')+'" onchange="updateSkuField(\''+key+'\',\'category\',this.value)" style="width:110px"></td><td><input class="inline-input" value="'+(s.packageType||'')+'" onchange="updateSkuField(\''+key+'\',\'packageType\',this.value)" style="width:100px"></td><td><input class="inline-input" type="number" value="'+(s.upm||'')+'" onchange="updateSkuField(\''+key+'\',\'upm\',parseFloat(this.value))" style="width:120px"></td><td><input class="inline-input" value="'+(s.allergens||'')+'" onchange="updateSkuField(\''+key+'\',\'allergens\',this.value)" style="width:140px"></td><td style="text-align:center">'+chk('capper')+'</td><td style="text-align:center">'+chk('nightShift')+'</td><td style="text-align:center">'+chk('preProcessed')+'</td><td style="text-align:center">'+chk('active')+'</td></tr>';}).join('');
-}
+function addSkuManually(){var input=document.getElementById('newSkuInput');var raw=(input.value||'').trim().toUpperCase().replace(/[^A-Z0-9_]/g,'');if(!raw)return;var el=document.getElementById('skuLibStatus');if(STATE.skuLibrary[raw]){document.getElementById('skuSearch').value=raw;filterSkuTable();input.value='';if(el)el.innerHTML='<div class="status status-warn">'+raw+' already in library — highlighted below</div>';return;}STATE.skuLibrary[raw]={active:true,category:'',packageType:'',upm:'',allergens:'',capper:false,nightShift:false,preProcessed:false};input.value='';document.getElementById('skuSearch').value=raw;filterSkuTable();if(el)el.innerHTML='<div class="status status-info">Added '+raw+' — fill in attributes and save</div>';}
+function filterSkuTable(){var search=(document.getElementById('skuSearch').value||'').toLowerCase(),showInactive=document.getElementById('showInactiveChk').checked,lib=STATE.skuLibrary,allKeys=Object.keys(lib);updateSkuCounts();var skus=allKeys.filter(function(k){if(!showInactive&&lib[k].active===false)return false;return k.toLowerCase().indexOf(search)!==-1;}).sort();document.getElementById('skuCount').textContent=skus.length+' SKUs';document.getElementById('skuTableBody').innerHTML=skus.map(function(key){var s=lib[key];function chk(f){return'<input type="checkbox" '+(s[f]?'checked':'')+' style="accent-color:var(--teal)" onchange="updateSkuField(\''+key+'\',\''+f+'\',this.checked)">';}return'<tr><td><span class="sku-active-dot '+(s.active!==false?'dot-active':'dot-inactive')+'"></span>'+key+'</td><td><input class="inline-input" value="'+(s.category||'')+'" onchange="updateSkuField(\''+key+'\',\'category\',this.value)" style="width:110px"></td><td><input class="inline-input" value="'+(s.packageType||'')+'" onchange="updateSkuField(\''+key+'\',\'packageType\',this.value)" style="width:100px"></td><td><input class="inline-input" type="number" value="'+(s.upm||'')+'" onchange="updateSkuField(\''+key+'\',\'upm\',parseFloat(this.value))" style="width:120px"></td><td><input class="inline-input" value="'+(s.allergens||'')+'" onchange="updateSkuField(\''+key+'\',\'allergens\',this.value)" style="width:140px"></td><td style="text-align:center">'+chk('capper')+'</td><td style="text-align:center">'+chk('nightShift')+'</td><td style="text-align:center">'+chk('preProcessed')+'</td><td style="text-align:center">'+chk('active')+'</td></tr>';}).join('');}
 var _skuTimer=null;
 function updateSkuField(key,field,val){if(!STATE.skuLibrary[key])STATE.skuLibrary[key]={};STATE.skuLibrary[key][field]=val;updateSkuCounts();var el=document.getElementById('skuLibStatus');if(el)el.innerHTML='<div class="status status-info">Unsaved — auto-saving…</div>';if(_skuTimer)clearTimeout(_skuTimer);_skuTimer=setTimeout(function(){saveSkuLibrary(true);},1500);}
 function updateSkuCounts(){var lib=STATE.skuLibrary,k=Object.keys(lib);document.getElementById('sc-capper').textContent=k.filter(function(x){return lib[x].capper;}).length;document.getElementById('sc-night').textContent=k.filter(function(x){return lib[x].nightShift;}).length;document.getElementById('sc-preproc').textContent=k.filter(function(x){return lib[x].preProcessed;}).length;document.getElementById('sc-active').textContent=k.filter(function(x){return lib[x].active!==false;}).length;document.getElementById('sc-total').textContent=k.length;}
 function saveSkuLibrary(isAutoSave){var el=document.getElementById('skuLibStatus');if(el)el.innerHTML='<div class="status status-info"><span class="spinner"></span>Saving…</div>';google.script.run.withSuccessHandler(function(){if(el){el.innerHTML='<div class="status status-ok">✓ Saved'+(isAutoSave?' (auto)':'')+'</div>';setTimeout(function(){if(el.innerHTML.indexOf('Saved')!==-1)el.innerHTML='';},3000);}}).withFailureHandler(function(err){if(el)el.innerHTML='<div class="status status-err">⚠ SAVE FAILED: '+err.message+'</div>';}).saveSkuLibrary(STATE.skuLibrary);}
 function importSkusFromForecast(){var allSkuNamesSet={};Object.keys(STATE.demand).forEach(function(wk){Object.keys(STATE.demand[wk]).forEach(function(day){Object.keys(STATE.demand[wk][day].skus||{}).forEach(function(sku){allSkuNamesSet[sku]=true;});});});Object.keys(STATE.skuLibrary).forEach(function(key){allSkuNamesSet[key]=true;});var allSkuNames=Object.keys(allSkuNamesSet),el=document.getElementById('skuLibStatus');if(!allSkuNames.length){el.innerHTML='<div class="status status-warn">No demand loaded yet — load demand first.</div>';return;}el.innerHTML='<div class="status status-info"><span class="spinner"></span>Pulling attributes…</div>';google.script.run.withSuccessHandler(function(result){var attributes=result.attributes,notFound=result.notFound,added=0,updated=0;allSkuNames.forEach(function(sku){var key=sku.toUpperCase(),normKey=key.replace(/[^A-Z0-9]/g,''),attrs=attributes[normKey];if(!STATE.skuLibrary[key]){STATE.skuLibrary[key]={active:true,category:'',packageType:'',upm:'',allergens:'',capper:false,nightShift:false,preProcessed:false};added++;}if(attrs){if(attrs.category)STATE.skuLibrary[key].category=attrs.category;if(attrs.packageType)STATE.skuLibrary[key].packageType=attrs.packageType;if(attrs.allergens)STATE.skuLibrary[key].allergens=attrs.allergens;if(attrs.upm)STATE.skuLibrary[key].upm=attrs.upm;updated++;}});renderSkuLibrary();var nfMsg=notFound.length?('<br><span style="color:var(--amber)">⚠ '+notFound.length+' not found: '+notFound.slice(0,10).join(', ')+(notFound.length>10?'…':'')+'</span>'):'';el.innerHTML='<div class="status status-info"><span class="spinner"></span>'+added+' new, '+updated+' matched — saving…</div>';google.script.run.withSuccessHandler(function(){el.innerHTML='<div class="status status-ok">✓ Saved — '+added+' new, '+updated+' matched'+nfMsg+'</div>';}).withFailureHandler(function(err){el.innerHTML='<div class="status status-err">⚠ Pull ok, SAVE FAILED: '+err.message+'</div>';}).saveSkuLibrary(STATE.skuLibrary);}).withFailureHandler(function(err){el.innerHTML='<div class="status status-err">'+err.message+'</div>';}).fetchSkuAttributesFor(allSkuNames);}
 
-// ── LINE CONFIG ────────────────────────────────────────────────────────────
 function renderLineConfig(){var lines=STATE.lineConfig||DEFAULT_LINE_CONFIG,days=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];document.getElementById('lineConfigBody').innerHTML=lines.map(function(l,i){var dc=days.map(function(d){return'<td style="text-align:center"><input type="checkbox" '+(l.days[d]?'checked':'')+' style="accent-color:var(--teal)" onchange="updateLineDay('+i+',\''+d+'\',this.checked)"></td>';}).join('');var tc=l.type==='night'?'var(--purple)':l.type==='capper'?'var(--blue)':'var(--teal)';return'<tr><td>'+l.label+'</td><td><span style="color:'+tc+'">'+l.type+'</span></td><td style="text-align:right"><input class="inline-input" type="number" value="'+l.hc+'" onchange="updateLineHC('+i+',this.value)" style="width:45px;text-align:right"></td><td><input class="inline-input" value="'+l.pool+'" onchange="updateLinePool('+i+',this.value)" style="width:80px"></td><td><input class="inline-input" type="time" value="'+(l.startTime||'06:00')+'" onchange="updateLineStartTime('+i+',this.value)" style="width:100px"></td>'+dc+'</tr>';}).join('');}
 function updateLineDay(i,d,val){var l=STATE.lineConfig||DEFAULT_LINE_CONFIG;l[i].days[d]=val;STATE.lineConfig=l;}
 function updateLineHC(i,val){var l=STATE.lineConfig||DEFAULT_LINE_CONFIG;l[i].hc=parseInt(val)||0;STATE.lineConfig=l;}
@@ -773,7 +703,6 @@ function updateLineStartTime(i,val){var l=STATE.lineConfig||DEFAULT_LINE_CONFIG;
 var _lcTimer=null;
 function saveLineConfig(isAutoSave){var lines=STATE.lineConfig||DEFAULT_LINE_CONFIG,btn=document.getElementById('saveLineConfigBtn'),el=document.getElementById('lineConfigStatus'),orig=btn?btn.textContent:'';if(btn){btn.disabled=true;btn.innerHTML='<span class="spinner"></span>Saving…';}if(el)el.innerHTML='<div class="status status-info"><span class="spinner"></span>Saving…</div>';google.script.run.withSuccessHandler(function(){STATE.lineConfig=lines;renderLineConfig();renderSequence();renderWorkbench();renderDayStrip('seqDayStrip');renderDayStrip('wbDayStrip');if(btn){btn.disabled=false;btn.textContent='✓ Saved';setTimeout(function(){btn.textContent=orig||'Save changes';},2000);}if(el){el.innerHTML='<div class="status status-ok">✓ Saved'+(isAutoSave?' (auto)':'')+'</div>';setTimeout(function(){el.innerHTML='';},3000);}}).withFailureHandler(function(err){if(btn){btn.disabled=false;btn.textContent=orig||'Save changes';}if(el)el.innerHTML='<div class="status status-err">⚠ SAVE FAILED: '+err.message+'</div>';}).saveLineConfig(lines);}
 
-// ── RULES ──────────────────────────────────────────────────────────────────
 function renderRulesAccess(){var ce=!!window._canEditRules,sb=document.getElementById('saveRulesBtn'),lb=document.getElementById('saveLineConfigBtn');if(sb)sb.style.display=ce?'':'none';if(lb)lb.style.display=ce?'':'none';}
 function renderRules(){
   var rules=getRules(),ce=!!window._canEditRules,el=document.getElementById('rulesBody');if(!el)return;
@@ -784,29 +713,62 @@ function updateRule(key,val){if(!STATE.sequencingRules)STATE.sequencingRules=JSO
 function updateRuleList(key,val){if(!STATE.sequencingRules)STATE.sequencingRules=JSON.parse(JSON.stringify(DEFAULT_RULES));STATE.sequencingRules[key]=val.split(',').map(function(s){return s.trim();}).filter(function(s){return!!s;});}
 function saveSequencingRules(){var el=document.getElementById('saveRulesBtn');if(el){el.disabled=true;el.innerHTML='<span class="spinner"></span>Saving…';}google.script.run.withSuccessHandler(function(){if(el){el.disabled=false;el.textContent='Save rules';}renderSequence();}).withFailureHandler(function(){if(el){el.disabled=false;el.textContent='Save rules';}}).saveSequencingRules(getRules());}
 
-// ── USERS ──────────────────────────────────────────────────────────────────
 function renderUsers(){google.script.run.withSuccessHandler(function(list){document.getElementById('adminList').innerHTML=list.map(function(email){return'<div style="display:flex;align-items:center;justify-content:space-between;background:var(--surface2);border-radius:5px;padding:5px 10px"><span style="font-family:var(--mono);font-size:11px">'+email+'</span><button class="btn btn-danger btn-sm" onclick="removeAdmin(\''+email+'\')">✕</button></div>';}).join('');}).withFailureHandler(function(){}).getAdminListForClient();var planners=STATE.planners||[];document.getElementById('plannerList').innerHTML=planners.map(function(email){return'<div style="display:flex;align-items:center;justify-content:space-between;background:var(--surface2);border-radius:5px;padding:5px 10px"><span style="font-family:var(--mono);font-size:11px">'+email+'</span><button class="btn btn-danger btn-sm" onclick="removePlanner(\''+email+'\')">✕</button></div>';}).join('');}
 function addAdmin(){var email=document.getElementById('newAdminEmail').value.trim().toLowerCase(),el=document.getElementById('adminStatus');if(email.indexOf('@')===-1)return;google.script.run.withSuccessHandler(function(){document.getElementById('newAdminEmail').value='';renderUsers();el.innerHTML='<div class="status status-ok">✓ Added '+email+'</div>';setTimeout(function(){el.innerHTML='';},3000);}).withFailureHandler(function(err){el.innerHTML='<div class="status status-err">'+err.message+'</div>';}).addAdmin(email);}
 function removeAdmin(email){google.script.run.withSuccessHandler(renderUsers).withFailureHandler(function(){}).removeAdmin(email);}
 function addPlanner(){var email=document.getElementById('newPlannerEmail').value.trim().toLowerCase();if(email.indexOf('@')===-1)return;if(STATE.planners.indexOf(email)===-1)STATE.planners.push(email);google.script.run.withSuccessHandler(function(){document.getElementById('newPlannerEmail').value='';renderUsers();}).withFailureHandler(function(){}).savePlanners(STATE.planners);}
 function removePlanner(email){STATE.planners=STATE.planners.filter(function(e){return e!==email;});google.script.run.withSuccessHandler(renderUsers).withFailureHandler(function(){}).savePlanners(STATE.planners);}
 
-// ── POLLING ────────────────────────────────────────────────────────────────
 function startPolling(){if(_pollInterval)return;_pollInterval=setInterval(function(){google.script.run.withSuccessHandler(function(ts){if(!ts||ts===_lastModified)return;_lastModified=ts;document.getElementById('syncIndicator').style.display='';google.script.run.withSuccessHandler(function(s){document.getElementById('syncIndicator').style.display='none';if(!s)return;if(s.demand)STATE.demand=s.demand;if(s.skuLibrary)STATE.skuLibrary=s.skuLibrary;if(s.lineConfig)STATE.lineConfig=s.lineConfig;if(s.planners)STATE.planners=s.planners;if(s.overrides)STATE.overrides=s.overrides;if(s.sequencingRules)STATE.sequencingRules=s.sequencingRules;if(s.publishedPlans)STATE.publishedPlans=s.publishedPlans;renderSequence();}).withFailureHandler(function(){document.getElementById('syncIndicator').style.display='none';}).getState();}).withFailureHandler(function(){}).getLastModified();},8000);}
 
-// ── PUBLISH PLAN ──────────────────────────────────────────────────────────
 function publishPlan(){
+  var dayData=STATE.demand[CURRENT_WEEK]&&STATE.demand[CURRENT_WEEK][CURRENT_DAY];
+  if(dayData&&dayData.mode==='forecast'){
+    document.getElementById('forecastPublishModal').classList.add('active');
+    return;
+  }
+  doPublishPlan();
+}
+function confirmPublishPlan(){
+  document.getElementById('forecastPublishModal').classList.remove('active');
+  doPublishPlan();
+}
+function doPublishPlan(){
   var result=runSequencer();if(!result)return;
   applyWorkbenchOverrides(result.lineState);
   var snap={lineState:result.lineState,lines:result.lines,jobs:result.jobs,unplaced:result.unplaced,publishedBy:(CURRENT_USER&&CURRENT_USER.email)||'',publishedAt:new Date().toISOString()};
   if(!STATE.publishedPlans)STATE.publishedPlans={};
   if(!STATE.publishedPlans[CURRENT_WEEK])STATE.publishedPlans[CURRENT_WEEK]={};
   STATE.publishedPlans[CURRENT_WEEK][CURRENT_DAY]=snap;
-  var btn=document.getElementById('publishPlanBtn');if(btn){btn.disabled=true;btn.innerHTML='<span class="spinner"></span>Publishing…';}
-  google.script.run.withSuccessHandler(function(){if(btn){btn.disabled=false;btn.innerHTML='🚀 Publish Plan';}renderSequence();}).withFailureHandler(function(err){if(btn){btn.disabled=false;btn.innerHTML='🚀 Publish Plan';}Logger.log('Publish failed: '+err.message);}).savePublishedPlan(CURRENT_WEEK,CURRENT_DAY,snap);
+  var btn=document.getElementById('publishPlanBtn');if(btn){btn.disabled=true;btn.textContent='Publishing...';}
+  google.script.run.withSuccessHandler(function(){
+    if(btn){btn.disabled=false;btn.textContent='🚀 Publish Plan';}
+    renderSequence();renderDayStrip('seqDayStrip');renderDayStrip('wbDayStrip');renderWorkbench();
+  }).withFailureHandler(function(err){
+    if(btn){btn.disabled=false;btn.textContent='🚀 Publish Plan';}
+  }).savePublishedPlan(CURRENT_WEEK,CURRENT_DAY,snap);
 }
 
-// ── NAV ────────────────────────────────────────────────────────────────────
+function unpublishPlan(){
+  var btn=document.getElementById('unpublishPlanBtn');if(btn){btn.disabled=true;btn.textContent='Unpublishing...';}
+  google.script.run.withSuccessHandler(function(){
+    if(btn){btn.disabled=false;btn.textContent='Unpublish';}
+    if(STATE.publishedPlans&&STATE.publishedPlans[CURRENT_WEEK])delete STATE.publishedPlans[CURRENT_WEEK][CURRENT_DAY];
+    renderSequence();renderDayStrip('seqDayStrip');renderDayStrip('wbDayStrip');renderWorkbench();
+  }).withFailureHandler(function(err){
+    if(btn){btn.disabled=false;btn.textContent='Unpublish';}
+  }).unpublishPlan(CURRENT_WEEK,CURRENT_DAY);
+}
+
+function toggleLegend(){
+  var body=document.getElementById('legendBody'),arrow=document.getElementById('legendArrow');
+  if(!body)return;
+  var open=body.style.maxHeight!=='0px';
+  body.style.maxHeight=open?'0px':'400px';
+  body.style.opacity=open?'0':'1';
+  arrow.style.transform=open?'rotate(-90deg)':'';
+}
+
 function switchView(name,btn){
   var views=document.querySelectorAll('.view');for(var i=0;i<views.length;i++)views[i].classList.remove('active');
   var navs=document.querySelectorAll('.nav-item');for(var i=0;i<navs.length;i++)navs[i].classList.remove('active');
@@ -821,52 +783,6 @@ function switchView(name,btn){
   if(name==='workbench'){document.querySelector('.main').classList.add('wb-active');renderWorkbench();}
 }
 
-// ── INIT ───────────────────────────────────────────────────────────────────
-window.onload=function(){
-  google.script.run.withSuccessHandler(function(user){
-    CURRENT_USER=user;
-    document.getElementById('userDisplay').textContent=user.name;
-    if(user.isAdmin||user.isPlanner||user.canEditRules)document.getElementById('adminNav').style.display='';
-    window._canEditRules=!!(user.isAdmin||user.canEditRules);
-    renderRulesAccess();
-  }).withFailureHandler(function(){}).getCurrentUser();
-
-  google.script.run.withSuccessHandler(function(s){
-    if(s){
-      if(s.demand)STATE.demand=s.demand;
-      if(s.skuLibrary)STATE.skuLibrary=s.skuLibrary;
-      if(s.lineConfig)STATE.lineConfig=s.lineConfig;
-      if(s.planners)STATE.planners=s.planners;
-      if(s.overrides)STATE.overrides=s.overrides;
-      if(s.sequencingRules)STATE.sequencingRules=s.sequencingRules;
-      if(s.publishedPlans)STATE.publishedPlans=s.publishedPlans;
-      _lastModified=s.lastModified||null;
-    }
-    var weeks=getWeeks();
-    if(weeks.length){
-      var todayStr=new Date().toISOString().slice(0,10),todayName=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][new Date().getDay()],foundWeek=null,foundDay=null;
-      for(var i=0;i<weeks.length;i++){for(var j=0;j<DAYS_ORDER.length;j++){var dd=STATE.demand[weeks[i]]&&STATE.demand[weeks[i]][DAYS_ORDER[j]];if(dd&&dd.date===todayStr){foundWeek=weeks[i];foundDay=DAYS_ORDER[j];break;}}if(foundWeek)break;}
-      if(foundWeek){CURRENT_WEEK=foundWeek;CURRENT_DAY=foundDay;}
-      else{CURRENT_WEEK=weeks[0];var days=getDays(CURRENT_WEEK);CURRENT_DAY=days.indexOf(todayName)!==-1?todayName:(days[0]||null);}
-    }
-    renderSequence();renderDayStrip('seqDayStrip');renderDayStrip('wbDayStrip');renderWeekDropdowns();startPolling();
-  }).withFailureHandler(function(err){document.getElementById('seqNoDataSub').textContent='Error loading state: '+err.message;}).getState();
-
-  var today=new Date(),plus2=new Date(today);plus2.setDate(plus2.getDate()+2);
-  document.getElementById('actualStart').value=today.toISOString().slice(0,10);
-  document.getElementById('actualEnd').value=plus2.toISOString().slice(0,10);
-};
-
-function toggleLegend(){
-  var body=document.getElementById('legendBody'),arrow=document.getElementById('legendArrow');
-  if(!body)return;
-  var open=body.style.maxHeight!=='0px';
-  body.style.maxHeight=open?'0px':'400px';
-  body.style.opacity=open?'0':'1';
-  arrow.style.transform=open?'rotate(-90deg)':'';
-}
-
-// ── DAY STRIP ─────────────────────────────────────────────────────────────
 function renderDayStrip(containerId){
   var el=document.getElementById(containerId);if(!el)return;
   var weeks=getWeeks(),cards=[],seen={};
@@ -906,32 +822,40 @@ function renderWeekDropdowns(){
   });
 }
 
-// ── PUBLISH PLAN ──────────────────────────────────────────────────────────
-function publishPlan(){
-  var result=runSequencer();if(!result)return;
-  applyWorkbenchOverrides(result.lineState);
-  var snap={lineState:result.lineState,lines:result.lines,jobs:result.jobs,unplaced:result.unplaced,publishedBy:(CURRENT_USER&&CURRENT_USER.email)||'',publishedAt:new Date().toISOString()};
-  if(!STATE.publishedPlans)STATE.publishedPlans={};
-  if(!STATE.publishedPlans[CURRENT_WEEK])STATE.publishedPlans[CURRENT_WEEK]={};
-  STATE.publishedPlans[CURRENT_WEEK][CURRENT_DAY]=snap;
-  var btn=document.getElementById('publishPlanBtn');if(btn){btn.disabled=true;btn.textContent='Publishing...';}
-  google.script.run.withSuccessHandler(function(){
-    if(btn){btn.disabled=false;btn.textContent='Publish Plan';}
-    renderSequence();renderDayStrip('seqDayStrip');renderDayStrip('wbDayStrip');
-  }).withFailureHandler(function(){
-    if(btn){btn.disabled=false;btn.textContent='Publish Plan';}
-  }).savePublishedPlan(CURRENT_WEEK,CURRENT_DAY,snap);
-}
+window.onload=function(){
+  google.script.run.withSuccessHandler(function(user){
+    CURRENT_USER=user;
+    document.getElementById('userDisplay').textContent=user.name;
+    if(user.isAdmin||user.isPlanner||user.canEditRules)document.getElementById('adminNav').style.display='';
+    window._canEditRules=!!(user.isAdmin||user.canEditRules);
+    renderRulesAccess();
+  }).withFailureHandler(function(){}).getCurrentUser();
 
-// ── TOGGLE LEGEND ─────────────────────────────────────────────────────────
-function toggleLegend(){
-  var body=document.getElementById('legendBody'),arrow=document.getElementById('legendArrow');
-  if(!body)return;
-  var open=body.style.maxHeight!=='0px';
-  body.style.maxHeight=open?'0px':'400px';
-  body.style.opacity=open?'0':'1';
-  arrow.style.transform=open?'rotate(-90deg)':'';
-}
+  google.script.run.withSuccessHandler(function(s){
+    if(s){
+      if(s.demand)STATE.demand=s.demand;
+      if(s.skuLibrary)STATE.skuLibrary=s.skuLibrary;
+      if(s.lineConfig)STATE.lineConfig=s.lineConfig;
+      if(s.planners)STATE.planners=s.planners;
+      if(s.overrides)STATE.overrides=s.overrides;
+      if(s.sequencingRules)STATE.sequencingRules=s.sequencingRules;
+      if(s.publishedPlans)STATE.publishedPlans=s.publishedPlans;
+      _lastModified=s.lastModified||null;
+    }
+    var weeks=getWeeks();
+    if(weeks.length){
+      var todayStr=new Date().toISOString().slice(0,10),todayName=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][new Date().getDay()],foundWeek=null,foundDay=null;
+      for(var i=0;i<weeks.length;i++){for(var j=0;j<DAYS_ORDER.length;j++){var dd=STATE.demand[weeks[i]]&&STATE.demand[weeks[i]][DAYS_ORDER[j]];if(dd&&dd.date===todayStr){foundWeek=weeks[i];foundDay=DAYS_ORDER[j];break;}}if(foundWeek)break;}
+      if(foundWeek){CURRENT_WEEK=foundWeek;CURRENT_DAY=foundDay;}
+      else{CURRENT_WEEK=weeks[0];var days=getDays(CURRENT_WEEK);CURRENT_DAY=days.indexOf(todayName)!==-1?todayName:(days[0]||null);}
+    }
+    renderSequence();renderDayStrip('seqDayStrip');renderDayStrip('wbDayStrip');renderWeekDropdowns();startPolling();
+  }).withFailureHandler(function(err){document.getElementById('seqNoDataSub').textContent='Error loading state: '+err.message;}).getState();
+
+  var today=new Date(),plus2=new Date(today);plus2.setDate(plus2.getDate()+2);
+  document.getElementById('actualStart').value=today.toISOString().slice(0,10);
+  document.getElementById('actualEnd').value=plus2.toISOString().slice(0,10);
+};
 
 document.addEventListener('visibilitychange',function(){if(document.hidden&&_pollInterval){clearInterval(_pollInterval);_pollInterval=null;}else if(!document.hidden&&!_pollInterval)startPolling();});
 </script>

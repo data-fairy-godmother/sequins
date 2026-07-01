@@ -521,6 +521,31 @@ function savePlanners(planners) {
   return { ok: true };
 }
 
+
+// ─── PUBLISHED PLAN ───────────────────────────────────────────────────────────
+function savePublishedPlan(weekLabel, day, snap) {
+  const user = getCurrentUser();
+  if (!user.isAdmin && !user.isPlanner) throw new Error('Not authorized');
+  let state = getState() || {};
+  if (!state.publishedPlans) state.publishedPlans = {};
+  if (!state.publishedPlans[weekLabel]) state.publishedPlans[weekLabel] = {};
+  state.publishedPlans[weekLabel][day] = snap;
+  writeAuditLog_(user.email, 'publish_plan', weekLabel, day, '');
+  saveStateAsEditor(state);
+  return { ok: true };
+}
+
+function unpublishPlan(weekLabel, day) {
+  const user = getCurrentUser();
+  if (!user.isAdmin && !user.isPlanner) throw new Error('Not authorized');
+  let state = getState() || {};
+  if (state.publishedPlans && state.publishedPlans[weekLabel]) {
+    delete state.publishedPlans[weekLabel][day];
+    writeAuditLog_(user.email, 'unpublish_plan', weekLabel, day, '');
+    saveStateAsEditor(state);
+  }
+  return { ok: true };
+}
 // ─── AUDIT LOG ────────────────────────────────────────────────────────────────
 function writeAuditLog_(email, action, week, day, detail) {
   try {
