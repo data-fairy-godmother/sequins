@@ -187,20 +187,27 @@ function fetchForecastWeekData(weekLabel) {
   const row3    = sheet.getRange(3, 1, 1, lastCol).getValues()[0];
   const DAYS    = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
 
-  const weekCols = [];
+  const tz = Session.getScriptTimeZone();
+  // Find the column range for this week using the row1 header (handles merged cells)
+  // then collect all day columns within that range using row3 dates
+  const allWkHeaders = [];
   row1.forEach((cell, ci) => {
-    const wkMatch = String(cell).match(/Week\s+(\d+)/i);
-    if (!wkMatch) return;
-    const label = 'Wk ' + parseInt(wkMatch[1]) + ' · ' + new Date().getFullYear();
-    if (label !== weekLabel) return;
+    const m = String(cell).match(/Week\s+(\d+)/i);
+    if (m) allWkHeaders.push({ ci, label: 'Wk ' + parseInt(m[1]) + ' · ' + new Date().getFullYear() });
+  });
+  const thisWk = allWkHeaders.find(w => w.label === weekLabel);
+  if (!thisWk) throw new Error('Week ' + weekLabel + ' not found in Summary tab');
+  const nextWk = allWkHeaders.find(w => w.ci > thisWk.ci);
+  const colEnd = nextWk ? nextWk.ci : row1.length;
+  const weekCols = [];
+  for (let ci = thisWk.ci; ci < colEnd; ci++) {
     const dayName = String(row2[ci]).trim();
-    if (!DAYS.includes(dayName)) return;
+    if (!DAYS.includes(dayName)) continue;
     const dateVal = row3[ci];
     const dateStr = dateVal instanceof Date
-      ? Utilities.formatDate(dateVal, Session.getScriptTimeZone(), 'yyyy-MM-dd') : '';
+      ? Utilities.formatDate(dateVal, tz, 'yyyy-MM-dd') : '';
     weekCols.push({ col: ci, day: dayName, date: dateStr });
-  });
-
+  }
   if (!weekCols.length) throw new Error('Week ' + weekLabel + ' not found in Summary tab');
 
   const allData = sheet.getRange(1, 1, lastRow, lastCol).getValues();
@@ -208,12 +215,17 @@ function fetchForecastWeekData(weekLabel) {
   const dates   = {};
   weekCols.forEach(wc => { dates[wc.day] = wc.date; });
 
-  for (let r = 11; r < allData.length; r++) {
-    const skuVal = allData[r][1];
+  const skuLib = (getState() || {}).skuLibrary || {};
+  const hasLib = Object.keys(skuLib).length > 0;
+  for (let r = 15; r < allData.length; r++) {
+    const skuVal = allData[r][2];
     if (!skuVal) continue;
     const skuName = String(skuVal).trim();
     if (!skuName || skuName === 'SKU') continue;
-    // No library gate
+    if (hasLib) {
+      const libEntry = skuLib[skuName.toUpperCase()];
+      if (!libEntry || libEntry.active === false) continue;
+    }
     weekCols.forEach(wc => {
       const qty = Math.round(parseFloat(allData[r][wc.col]) || 0);
       if (qty <= 0) return;
