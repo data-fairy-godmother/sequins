@@ -1,15 +1,10 @@
 <!--
   Sequins ✨ — Index.html
-  v0.3.5 — 2026-06-30
-  - Pull attributes scans skuLibrary + demand (fixes manually-added SKUs getting no attrs)
-  - Add SKU button in SKU Library (short-term fix for zero-demand SKUs)
-  - Backlog: auto-populate library from demand fetch, stop using library as fetch gate
-  - Demand Debug panel (admin-only) on Line Sequence view
-    Surfaces stored-vs-sequencer unit count diff with SKU-level breakdown
-  - Collapsible Per-Line Summary (both views, shared state)
-  - buildLineCards() shared helper
-  - Structural fix: removed 2 extra </div> closing main+shell prematurely
--->
+  v0.3.8 — 2026-07-01
+  - Workbench light gray background
+  - Publish Plan button in Workbench (admin + planner)
+  - Line Sequence reads from published plan only
+  - Legend panel in sidebar-->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -148,6 +143,10 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--s
 .sku-row.dragging{opacity:0.35;}
 .line-card-body.drag-over{background:var(--teal-dim);outline:2px dashed var(--teal);outline-offset:-4px;}
 .sku-row.overridden{border-left:2px solid var(--amber);}
+.legend-row{display:flex;align-items:center;gap:7px;padding:2px 4px;}
+.legend-desc{font-size:9px;color:var(--muted);line-height:1.3;font-family:var(--mono);}
+.main.wb-active{background:#e8f8f4;}
+.main.wb-active .page-title{color:#1a2e28;}.main.wb-active .page-sub{color:#3a5a50;}.main.wb-active .card-title{color:#3a5a50;}
 </style>
 </head>
 <body>
@@ -173,6 +172,21 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--s
       <button class="nav-item" onclick="switchView('skus',this)"><span class="icon">🗂</span>SKU Library</button>
       <button class="nav-item" onclick="switchView('lines',this)"><span class="icon">⚙️</span>Line Config</button>
       <button class="nav-item" onclick="switchView('users',this)"><span class="icon">👥</span>Users</button>
+    </div>
+    <div style="flex:1"></div>
+    <div class="nav-spacer"></div>
+    <div class="sidebar-section">
+      <div class="sidebar-label" onclick="toggleLegend()" style="cursor:pointer;user-select:none;display:flex;align-items:center;justify-content:space-between">Legend <span id="legendArrow" style="font-size:10px;color:var(--muted);display:inline-block;transition:transform .2s">▾</span></div>
+      <div id="legendBody" style="display:flex;flex-direction:column;gap:5px;padding:4px 4px 8px;max-height:400px;overflow:hidden;transition:max-height .25s ease,opacity .2s;opacity:1">
+        <div class="legend-row"><span class="sku-tag tag-usda">USDA</span><span class="legend-desc">USDA SKU — not allowed on LINE-6</span></div>
+        <div class="legend-row"><span class="sku-tag tag-wrap">wrap</span><span class="legend-desc">Wrap — locked to LINE-3 only</span></div>
+        <div class="legend-row"><span class="sku-tag tag-sand">sand</span><span class="legend-desc">Sandwich — locked to LINE-2 only</span></div>
+        <div class="legend-row"><span class="preproc-badge" style="width:14px;height:14px;font-size:8px;flex-shrink:0">P</span><span class="legend-desc">Pre-processed — sequenced first</span></div>
+        <div class="legend-row"><span class="sku-tag" style="background:var(--amber-dim);color:var(--amber);flex-shrink:0">moved</span><span class="legend-desc">Manually overridden position</span></div>
+        <div class="legend-row"><span class="mode-badge mode-actual" style="font-size:9px;padding:1px 6px;flex-shrink:0">actual</span><span class="legend-desc">Confirmed demand (Demands 2025)</span></div>
+        <div class="legend-row"><span class="mode-badge mode-forecast" style="font-size:9px;padding:1px 6px;flex-shrink:0">forecast</span><span class="legend-desc">Projected demand (Compiled Forecast)</span></div>
+        <div class="legend-row"><div class="live-dot" style="width:7px;height:7px;flex-shrink:0;margin:0 1px"></div><span class="legend-desc">Live — polling every 8s</span></div>
+      </div>
     </div>
   </nav>
   <main class="main">
@@ -223,7 +237,10 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--s
     <div class="view" id="view-workbench">
       <div class="page-header">
         <div><div class="page-title">Workbench</div><div class="page-sub" id="wbSubtitle">Same plan as Line Sequence</div></div>
-        <div class="btn-row"><span class="mode-badge mode-forecast" id="wbModeBadge" style="display:none"></span></div>
+        <div class="btn-row">
+          <span class="mode-badge mode-forecast" id="wbModeBadge" style="display:none"></span>
+          <button class="btn btn-green" id="publishPlanBtn" style="display:none" onclick="publishPlan()">🚀 Publish Plan</button>
+        </div>
       </div>
       <div id="wbNoData" class="empty">
         <div class="empty-icon">🔧</div>
@@ -359,7 +376,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--s
 <script>
 var DAYS_ORDER=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
 var DAY_SHORT={Monday:'Mon',Tuesday:'Tue',Wednesday:'Wed',Thursday:'Thu',Friday:'Fri',Saturday:'Sat',Sunday:'Sun'};
-var STATE={demand:{},skuLibrary:{},lineConfig:null,planners:[],overrides:{},sequencingRules:null};
+var STATE={demand:{},skuLibrary:{},lineConfig:null,planners:[],overrides:{},sequencingRules:null,publishedPlans:{}};
 var CURRENT_USER=null,CURRENT_WEEK=null,CURRENT_DAY=null;
 var _pendingForecast=null,_pendingActuals=null,_pollInterval=null,_lastModified=null;
 var _metricsCollapsed=false;
@@ -604,9 +621,19 @@ function renderSequence(){
   var dayData=STATE.demand[CURRENT_WEEK]&&STATE.demand[CURRENT_WEEK][CURRENT_DAY],mb=document.getElementById('seqModeBadge');
   if(dayData){mb.style.display='';mb.textContent=dayData.mode;mb.className='mode-badge mode-'+dayData.mode;}else{mb.style.display='none';}
   document.getElementById('seqSubtitle').textContent=(CURRENT_WEEK&&CURRENT_DAY)?CURRENT_WEEK+' · '+CURRENT_DAY:'';
-  var result=runSequencer();if(!result)return;
-  applyWorkbenchOverrides(result.lineState);
-  var lineState=result.lineState,lines=result.lines,jobs=result.jobs,unplaced=result.unplaced;
+  var pub=STATE.publishedPlans&&STATE.publishedPlans[CURRENT_WEEK]&&STATE.publishedPlans[CURRENT_WEEK][CURRENT_DAY];
+  var npc=document.getElementById('seqNoPlan');
+  if(!pub){
+    if(!npc){var np=document.createElement('div');np.id='seqNoPlan';np.className='card';np.style.borderColor='rgba(245,158,11,.25)';np.innerHTML='<div style=text-align:center;padding:32px><span style=font-family:var(--mono);font-size:12px;color:var(--muted)>No published plan for this day. Open Workbench and click Publish Plan.</span></div>';document.getElementById('lineCards').parentNode.insertBefore(np,document.getElementById('lineCards'));}else{npc.style.display='';}
+    document.getElementById('lineCards').innerHTML='';
+    document.getElementById('lineMetricsTable').innerHTML='';
+    document.getElementById('unplacedCard').style.display='none';
+    document.getElementById('noAttrsCard').style.display='none';
+    ['k-skus','k-units','k-lines','k-placed','k-unplaced','k-noattrs'].forEach(function(id){var e=document.getElementById(id);if(e)e.textContent='--';});
+    return;
+  }
+  if(npc)npc.style.display='none';
+  var lineState=pub.lineState,lines=pub.lines,jobs=pub.jobs,unplaced=pub.unplaced||[];
   var tu=jobs.reduce(function(s,j){return s+j.qty;},0),al=lines.filter(function(l){return lineState[l.id]&&lineState[l.id].slots.length>0;}).length,naj=jobs.filter(function(j){return!j.hasAttrs;});
   document.getElementById('k-skus').textContent=fmtUnits(jobs.length);
   document.getElementById('k-units').textContent=fmtUnits(tu);
@@ -639,6 +666,7 @@ function renderWorkbench(){
   var dayData=STATE.demand[CURRENT_WEEK]&&STATE.demand[CURRENT_WEEK][CURRENT_DAY],mb=document.getElementById('wbModeBadge');
   if(dayData){mb.style.display='';mb.textContent=dayData.mode;mb.className='mode-badge mode-'+dayData.mode;}else{mb.style.display='none';}
   document.getElementById('wbSubtitle').textContent=(CURRENT_WEEK&&CURRENT_DAY)?CURRENT_WEEK+' · '+CURRENT_DAY:'Same plan as Line Sequence';
+  var ppb=document.getElementById('publishPlanBtn');if(ppb)ppb.style.display=(CURRENT_USER&&(CURRENT_USER.isAdmin||CURRENT_USER.isPlanner))?'':'none';
   var result=runSequencer();if(!result)return;
   var lineState=result.lineState,lines=result.lines,rules=result.rules;
   applyWorkbenchOverrides(lineState);
@@ -721,7 +749,19 @@ function addPlanner(){var email=document.getElementById('newPlannerEmail').value
 function removePlanner(email){STATE.planners=STATE.planners.filter(function(e){return e!==email;});google.script.run.withSuccessHandler(renderUsers).withFailureHandler(function(){}).savePlanners(STATE.planners);}
 
 // ── POLLING ────────────────────────────────────────────────────────────────
-function startPolling(){if(_pollInterval)return;_pollInterval=setInterval(function(){google.script.run.withSuccessHandler(function(ts){if(!ts||ts===_lastModified)return;_lastModified=ts;document.getElementById('syncIndicator').style.display='';google.script.run.withSuccessHandler(function(s){document.getElementById('syncIndicator').style.display='none';if(!s)return;if(s.demand)STATE.demand=s.demand;if(s.skuLibrary)STATE.skuLibrary=s.skuLibrary;if(s.lineConfig)STATE.lineConfig=s.lineConfig;if(s.planners)STATE.planners=s.planners;if(s.overrides)STATE.overrides=s.overrides;if(s.sequencingRules)STATE.sequencingRules=s.sequencingRules;renderSequence();}).withFailureHandler(function(){document.getElementById('syncIndicator').style.display='none';}).getState();}).withFailureHandler(function(){}).getLastModified();},8000);}
+function startPolling(){if(_pollInterval)return;_pollInterval=setInterval(function(){google.script.run.withSuccessHandler(function(ts){if(!ts||ts===_lastModified)return;_lastModified=ts;document.getElementById('syncIndicator').style.display='';google.script.run.withSuccessHandler(function(s){document.getElementById('syncIndicator').style.display='none';if(!s)return;if(s.demand)STATE.demand=s.demand;if(s.skuLibrary)STATE.skuLibrary=s.skuLibrary;if(s.lineConfig)STATE.lineConfig=s.lineConfig;if(s.planners)STATE.planners=s.planners;if(s.overrides)STATE.overrides=s.overrides;if(s.sequencingRules)STATE.sequencingRules=s.sequencingRules;if(s.publishedPlans)STATE.publishedPlans=s.publishedPlans;renderSequence();}).withFailureHandler(function(){document.getElementById('syncIndicator').style.display='none';}).getState();}).withFailureHandler(function(){}).getLastModified();},8000);}
+
+// ── PUBLISH PLAN ──────────────────────────────────────────────────────────
+function publishPlan(){
+  var result=runSequencer();if(!result)return;
+  applyWorkbenchOverrides(result.lineState);
+  var snap={lineState:result.lineState,lines:result.lines,jobs:result.jobs,unplaced:result.unplaced,publishedBy:(CURRENT_USER&&CURRENT_USER.email)||'',publishedAt:new Date().toISOString()};
+  if(!STATE.publishedPlans)STATE.publishedPlans={};
+  if(!STATE.publishedPlans[CURRENT_WEEK])STATE.publishedPlans[CURRENT_WEEK]={};
+  STATE.publishedPlans[CURRENT_WEEK][CURRENT_DAY]=snap;
+  var btn=document.getElementById('publishPlanBtn');if(btn){btn.disabled=true;btn.innerHTML='<span class="spinner"></span>Publishing…';}
+  google.script.run.withSuccessHandler(function(){if(btn){btn.disabled=false;btn.innerHTML='🚀 Publish Plan';}renderSequence();}).withFailureHandler(function(err){if(btn){btn.disabled=false;btn.innerHTML='🚀 Publish Plan';}Logger.log('Publish failed: '+err.message);}).savePublishedPlan(CURRENT_WEEK,CURRENT_DAY,snap);
+}
 
 // ── NAV ────────────────────────────────────────────────────────────────────
 function switchView(name,btn){
@@ -734,8 +774,8 @@ function switchView(name,btn){
   if(name==='skus')renderSkuLibrary();
   if(name==='lines'){renderLineConfig();renderRules();renderRulesAccess();}
   if(name==='users')renderUsers();
-  if(name==='sequence')renderSequence();
-  if(name==='workbench')renderWorkbench();
+  if(name==='sequence'){document.querySelector('.main').classList.remove('wb-active');renderSequence();}
+  if(name==='workbench'){document.querySelector('.main').classList.add('wb-active');renderWorkbench();}
 }
 
 // ── INIT ───────────────────────────────────────────────────────────────────
@@ -756,6 +796,7 @@ window.onload=function(){
       if(s.planners)STATE.planners=s.planners;
       if(s.overrides)STATE.overrides=s.overrides;
       if(s.sequencingRules)STATE.sequencingRules=s.sequencingRules;
+      if(s.publishedPlans)STATE.publishedPlans=s.publishedPlans;
       _lastModified=s.lastModified||null;
     }
     var weeks=getWeeks();
@@ -773,6 +814,14 @@ window.onload=function(){
   document.getElementById('actualEnd').value=plus2.toISOString().slice(0,10);
 };
 
+function toggleLegend(){
+  var body=document.getElementById('legendBody'),arrow=document.getElementById('legendArrow');
+  if(!body)return;
+  var open=body.style.maxHeight!=='0px';
+  body.style.maxHeight=open?'0px':'400px';
+  body.style.opacity=open?'0':'1';
+  arrow.style.transform=open?'rotate(-90deg)':'';
+}
 document.addEventListener('visibilitychange',function(){if(document.hidden&&_pollInterval){clearInterval(_pollInterval);_pollInterval=null;}else if(!document.hidden&&!_pollInterval)startPolling();});
 </script>
 </body>

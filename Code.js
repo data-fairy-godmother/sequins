@@ -569,6 +569,21 @@ function saveSkuMove(weekLabel, day, sku, fromLine, toLine, violations, note) {
   return { ok: true };
 }
 
+
+// ─── PUBLISHED PLAN ───────────────────────────────────────────────────────────
+function savePublishedPlan(weekLabel, day, snapshot) {
+  const user = getCurrentUser();
+  if (!user.isAdmin && !user.isPlanner && !user.canEditRules) throw new Error('Not authorized');
+  let state = getState() || {};
+  if (!state.publishedPlans) state.publishedPlans = {};
+  if (!state.publishedPlans[weekLabel]) state.publishedPlans[weekLabel] = {};
+  state.publishedPlans[weekLabel][day] = snapshot;
+  writeAuditLog_(user.email, 'publish_plan', weekLabel, day, Object.keys(snapshot.lineState || {}).length + ' lines');
+  state.lastModified = new Date().toISOString();
+  PropertiesService.getScriptProperties().setProperty(STATE_KEY, JSON.stringify(state));
+  return { ok: true };
+}
+
 function clearSkuMove(weekLabel, day, sku) {
   const user = getCurrentUser();
   if (!user.isAdmin && !user.isPlanner && !user.canEditRules) throw new Error('Not authorized');
