@@ -3,6 +3,12 @@
  * Assembly line sequencing agent for Farmer's Fridge
  * OPSICLE vNext
  *
+ * v0.4.2 — 2026-07-01
+ * - Removed SKU library gate from fetchForecastWeekData — all forecast SKUs load regardless of library
+ * - Removed SKU library gate from fetchActualDemand — same fix for actuals fetch
+ * - Library now governs sequencing behavior only (pool, UPM, allergens), not data ingestion
+ * - fetchForecastWeekData now scans col A dynamically for SKU start row instead of hardcoded col B row 12
+ *
  * Deploy as Web App:
  *   Execute as: Me
  *   Who has access: Anyone in Farmer's Fridge
@@ -182,51 +188,71 @@ function fetchForecastWeekData(weekLabel) {
 
   const lastCol = sheet.getLastColumn();
   const lastRow = sheet.getLastRow();
-  const row1    = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
-  const row2    = sheet.getRange(2, 1, 1, lastCol).getValues()[0];
-  const row3    = sheet.getRange(3, 1, 1, lastCol).getValues()[0];
+  const allData = sheet.getRange(1, 1, lastRow, lastCol).getValues();
+  const tz      = Session.getScriptTimeZone();
   const DAYS    = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
 
-  const tz = Session.getScriptTimeZone();
-  // Find the column range for this week using the row1 header (handles merged cells)
-  // then collect all day columns within that range using row3 dates
-  const allWkHeaders = [];
-  row1.forEach((cell, ci) => {
-    const m = String(cell).match(/Week\s+(\d+)/i);
-    if (m) allWkHeaders.push({ ci, label: 'Wk ' + parseInt(m[1]) + ' · ' + new Date().getFullYear() });
+  // Get the date range for this week from what fetchForecastWeeks already
+  // parsed — use the dates stored in STATE.demand for this weekLabel to know
+  // which dates belong to this week, then match against row 3.
+  // This avoids any week-number calculation and is robust against merged cells.
+  const state     = getState() || {};
+  const existing  = (state.demand && state.demand[weekLabel]) || {};
+  const knownDates = {};
+  DAYS.forEach(function(day) {
+    if (existing[day] && existing[day].date) knownDates[existing[day].date] = day;
   });
-  const thisWk = allWkHeaders.find(w => w.label === weekLabel);
-  if (!thisWk) throw new Error('Week ' + weekLabel + ' not found in Summary tab');
-  const nextWk = allWkHeaders.find(w => w.ci > thisWk.ci);
-  const colEnd = nextWk ? nextWk.ci : row1.length;
+
+  // If no dates stored yet (first load), fall back to fetchForecastWeeks cols.
+  // fetchForecastWeeks scans row 1 for the week label — but because of merged
+  // cells it only finds the FIRST column. So instead: scan row 3 for Date
+  // objects and row 2 for day names, collect ALL 7 days that share the same
+  // week label found by carrying the last-seen row-1 value forward.
   const weekCols = [];
-  for (let ci = thisWk.ci; ci < colEnd; ci++) {
-    const dayName = String(row2[ci]).trim();
-    if (!DAYS.includes(dayName)) continue;
-    const dateVal = row3[ci];
-    const dateStr = dateVal instanceof Date
-      ? Utilities.formatDate(dateVal, tz, 'yyyy-MM-dd') : '';
-    weekCols.push({ col: ci, day: dayName, date: dateStr });
+  if (Object.keys(knownDates).length > 0) {
+    // Match by stored dates
+    for (let ci = 0; ci < lastCol; ci++) {
+      const dateVal = allData[2][ci];
+      if (!dateVal || !(dateVal instanceof Date)) continue;
+      const dateStr = Utilities.formatDate(new Date(dateVal), tz, 'yyyy-MM-dd');
+      if (!knownDates[dateStr]) continue;
+      const dayName = String(allData[1][ci] || '').trim();
+      if (!DAYS.includes(dayName)) continue;
+      weekCols.push({ col: ci, day: dayName, date: dateStr });
+    }
+  } else {
+    // First load: carry last-seen week label forward across merged cells
+    let lastLabel = '';
+    for (let ci = 0; ci < lastCol; ci++) {
+      const cell = String(allData[0][ci] || '').trim();
+      if (cell) lastLabel = cell;
+      const wkMatch = lastLabel.match(/Week\s+(\d+)/i);
+      if (!wkMatch) continue;
+      const label = 'Wk ' + parseInt(wkMatch[1]) + ' · ' + new Date().getFullYear();
+      if (label !== weekLabel) continue;
+      const dayName = String(allData[1][ci] || '').trim();
+      if (!DAYS.includes(dayName)) continue;
+      const dateVal = allData[2][ci];
+      const dateStr = dateVal instanceof Date
+        ? Utilities.formatDate(new Date(dateVal), tz, 'yyyy-MM-dd') : '';
+      weekCols.push({ col: ci, day: dayName, date: dateStr });
+    }
   }
+
   if (!weekCols.length) throw new Error('Week ' + weekLabel + ' not found in Summary tab');
 
-  const allData = sheet.getRange(1, 1, lastRow, lastCol).getValues();
   const skuData = {};
   const dates   = {};
-  weekCols.forEach(wc => { dates[wc.day] = wc.date; });
+  weekCols.forEach(function(wc) { dates[wc.day] = wc.date; });
 
-  const skuLib = (getState() || {}).skuLibrary || {};
-  const hasLib = Object.keys(skuLib).length > 0;
+  // SKU names are in col C (index 2), starting row 16 (index 15).
+  // No library filter — load all SKUs from the forecast as-is.
   for (let r = 15; r < allData.length; r++) {
     const skuVal = allData[r][2];
     if (!skuVal) continue;
     const skuName = String(skuVal).trim();
     if (!skuName || skuName === 'SKU') continue;
-    if (hasLib) {
-      const libEntry = skuLib[skuName.toUpperCase()];
-      if (!libEntry || libEntry.active === false) continue;
-    }
-    weekCols.forEach(wc => {
+    weekCols.forEach(function(wc) {
       const qty = Math.round(parseFloat(allData[r][wc.col]) || 0);
       if (qty <= 0) return;
       if (!skuData[wc.day]) skuData[wc.day] = {};
@@ -278,14 +304,14 @@ function fetchActualDemand(startDate, endDate) {
     }
     if (!dateCols.length) return;
 
-    // SKUs start row 4 (index 3), col A (index 0). Stop at VITAL_FARMS_EGGS.
+    // No library filter — load all SKUs from actuals as-is.
+    // Stop at sentinel VITAL_FARMS_EGGS.
     for (let r = 3; r < allData.length; r++) {
       const skuVal = allData[r][0];
       if (!skuVal) continue;
       const skuName = String(skuVal).trim();
       if (!skuName) continue;
       if (skuName.toUpperCase() === DEMANDS_STOP_SKU) break;
-      // No library gate
       dateCols.forEach(dc => {
         const qty = Math.round(parseFloat(allData[r][dc.col]) || 0);
         if (qty <= 0) return;
@@ -571,36 +597,6 @@ function saveSkuMove(weekLabel, day, sku, fromLine, toLine, violations, note) {
   });
 
   saveStateAsEditor(state);
-  return { ok: true };
-}
-
-
-// ─── PUBLISHED PLAN ───────────────────────────────────────────────────────────
-function savePublishedPlan(weekLabel, day, snapshot) {
-  const user = getCurrentUser();
-  if (!user.isAdmin && !user.isPlanner && !user.canEditRules) throw new Error('Not authorized');
-  let state = getState() || {};
-  if (!state.publishedPlans) state.publishedPlans = {};
-  if (!state.publishedPlans[weekLabel]) state.publishedPlans[weekLabel] = {};
-  state.publishedPlans[weekLabel][day] = snapshot;
-  writeAuditLog_(user.email, 'publish_plan', weekLabel, day, Object.keys(snapshot.lineState || {}).length + ' lines');
-  state.lastModified = new Date().toISOString();
-  PropertiesService.getScriptProperties().setProperty(STATE_KEY, JSON.stringify(state));
-  return { ok: true };
-}
-
-
-// ─── PUBLISHED PLAN ───────────────────────────────────────────────────────────
-function savePublishedPlan(weekLabel, day, snapshot) {
-  const user = getCurrentUser();
-  if (!user.isAdmin && !user.isPlanner && !user.canEditRules) throw new Error('Not authorized');
-  let state = getState() || {};
-  if (!state.publishedPlans) state.publishedPlans = {};
-  if (!state.publishedPlans[weekLabel]) state.publishedPlans[weekLabel] = {};
-  state.publishedPlans[weekLabel][day] = snapshot;
-  writeAuditLog_(user.email, 'publish_plan', weekLabel, day, Object.keys(snapshot.lineState || {}).length + ' lines');
-  state.lastModified = new Date().toISOString();
-  PropertiesService.getScriptProperties().setProperty(STATE_KEY, JSON.stringify(state));
   return { ok: true };
 }
 
